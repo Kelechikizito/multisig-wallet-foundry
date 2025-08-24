@@ -31,12 +31,18 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 
-
 /**
  * @title MultiSigTimeLock
  * @author Kelechi Kizito Ugwu
  */
 contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
+    //////////////////////////////////////
+    /////// ERRORS               /////////
+    //////////////////////////////////////
+    error MultiSigTimelock__AccountIsAlreadyAnOwner();
+    error MultiSigTimelock__MaximumOwnersReached();
+    error MultiSigTimelock__InvalidAddress();
+
     //////////////////////////////////////
     /////// TYPE DECLARATIONS    /////////
     //////////////////////////////////////
@@ -53,14 +59,32 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
     //////////////////////////////////////
     /////// STATE VARIABLES      /////////
     //////////////////////////////////////
-    uint256 private s_oneDayTimeDelay = 24 hours;
-    uint256 private s_twoDaysTimeDelay = 48 hours;
-    uint256 private s_sevenDaysTimeDelay = 7 days;
+    uint256 private constant ONE_DAY_TIME_DELAY = 24 hours;
+    uint256 private constant TWO_DAYS_TIME_DELAY = 48 hours;
+    uint256 private constant SEVEN_DAYS_TIME_DELAY = 7 days;
+    uint256 private constant MAX_OWNER_COUNT = 5;
+    bytes32 private constant SIGNING_ROLE = keccak256("SIGNING_ROLE");
 
-    address[] public s_owners;
-    mapping(address => bool) public s_isOwner;
-    uint256 public s_requiredConfirmations;
-    uint256 public s_transactionCount;
+    uint256 private s_requiredConfirmations = 3; // 3 out of 5 owners to approve a transaction.
+    address[5] private s_owners; // The list of approved addresses (the people allowed to sign transactions).
+    mapping(address user => bool owner) private s_isOwner;
+    uint256 private s_ownerCount; // This variable tracks how many slots are filled
+    mapping(uint256 transactionId => Transaction) private s_transactions;
+    uint256 private s_transactionCount;
+
+    //////////////////////////////////////
+    /////// EVENTS               /////////
+    //////////////////////////////////////
+    event Deposit(address indexed sender, uint256 amount);
+    event SigningRoleGranted(address indexed account);
+
+    //////////////////////////////////////
+    /////// MODIFIERS            /////////
+    //////////////////////////////////////
+    modifier noneZeroAddress(address account) {
+        if (account == address(0)) revert MultiSigTimelock__InvalidAddress();
+        _;
+    }
 
     //////////////////////////////////////
     /////// CONSTRUCTOR          /////////
@@ -70,30 +94,68 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
     //////////////////////////////////////
     ////// RECEIVE FUNCTIONS  ////////////
     //////////////////////////////////////
-    receive() external payable {}
+    receive() external payable {
+        // What should happen when ETH is sent? An Event should be emitted.
+        emit Deposit(msg.sender, msg.value);
+    }
+
+    //////////////////////////////////////
+    /////// EXTERNAL FUNCTIONS    ////////
+    //////////////////////////////////////
+    /**
+     * @dev Function to grant signing role to an account
+     * @param _account The address to be granted the signing role
+     */
+    function grantSigningRole(address _account) external onlyOwner noneZeroAddress(_account) {
+        if (s_isOwner[_account]) {
+            revert MultiSigTimelock__AccountIsAlreadyAnOwner();
+        }
+        if (s_ownerCount >= MAX_OWNER_COUNT) {
+            revert MultiSigTimelock__MaximumOwnersReached();
+        }
+
+        s_owners[s_ownerCount] = _account;
+        s_isOwner[_account] = true;
+        s_ownerCount += 1;
+
+        _grantRole(SIGNING_ROLE, _account);
+        emit SigningRoleGranted(_account);
+    }
+
+    /**
+     * @dev Function to propose a transaction
+     * @param to
+     * @param value
+     * @param data
+     */
+    function proposeTransaction(address to, uint256 value, bytes calldata data) external nonReentrant {
+        _proposeTransaction(to, value, data);
+    }
 
     //////////////////////////////////////
     /////// INTERNAL FUNCTIONS    ////////
     //////////////////////////////////////
     // KAYKAY REMEMBER, CONVENTIONALLY, INTERNAL FUNCTIONS ARE PREFIXED WITH AN UNDERSCORE
-    function _proposeTransaction(Transaction memory _transaction) internal {}
-    function _confirmTransaction(Transaction memory _transaction) internal {}
-    function _executeTransaction(Transaction memory _transaction) internal {}
-    function _revokeConfirmation(Transaction memory _transaction) internal {}
+    function _proposeTransaction(address to, uint256 value, bytes memory data) internal {}
 
-    
+    function _confirmTransaction(address to, uint256 value, bytes memory data) internal {}
+
+    function _executeTransaction(address to, uint256 value, bytes memory data) internal {}
+
+    function _revokeConfirmation(address to, uint256 value, bytes memory data) internal {}
+
     /////////////////////////////////////////
     /////// EXTERNAL VIEW FUNCTIONS  ////////
     /////////////////////////////////////////
-    function getOneDayTimeDelay() external view returns(uint256) {
-        return s_oneDayTimeDelay;
+    function getOneDayTimeDelay() external pure returns (uint256) {
+        return ONE_DAY_TIME_DELAY;
     }
 
-    function getTwoDaysTimeDelay() external view returns(uint256) {
-        return s_twoDaysTimeDelay;
+    function getTwoDaysTimeDelay() external pure returns (uint256) {
+        return TWO_DAYS_TIME_DELAY;
     }
 
-    function getSevenDaysTimeDelay() external view returns(uint256) {
-        return s_SevenDaysTimeDelay;
+    function getSevenDaysTimeDelay() external pure returns (uint256) {
+        return SEVEN_DAYS_TIME_DELAY;
     }
 }
