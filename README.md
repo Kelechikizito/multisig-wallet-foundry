@@ -148,3 +148,10 @@ import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 - Gas optimization
 
 This project perfectly bridges the gap between your Foundry knowledge and real-world DeFi complexity. Want me to dive deeper into any specific aspect or help you plan the implementation approach?
+
+
+
+
+
+
+
