@@ -7,7 +7,7 @@ import {MultiSigTimelock} from "src/MultiSigTimelock.sol";
 contract MultiSigTimeLockTest is Test {
     MultiSigTimelock multiSigTimelock;
 
-    address public SIGNER_ONE = makeAddr("signer_one");
+    address public OWNER = address(this);
     address public SIGNER_TWO = makeAddr("signer_two");
     address public SIGNER_THREE = makeAddr("signer_three");
     address public SIGNER_FOUR = makeAddr("signer_four");
@@ -21,14 +21,20 @@ contract MultiSigTimeLockTest is Test {
     //////////////////////////////
     /// SIGNING ROLE TESTS   /////
     //////////////////////////////
+    function testOwnerIsAutoSigner() public view {
+        // ASSERT
+        // After deployment, owner(address(this))- in the case, should be first signer
+        assertEq(multiSigTimelock.getSignerCount(), 1);
+        assertTrue(multiSigTimelock.hasRole(multiSigTimelock.getSigningRole(), address(this)));
+    }
+
     function testGrantSigningRoles() public {
         // ARRANGE
         uint256 signerCount = 5;
         address[] memory signersArray = new address[](5);
 
         // ACT
-        multiSigTimelock.grantSigningRole(SIGNER_ONE);
-        signersArray[0] = SIGNER_ONE;
+        signersArray[0] = OWNER;
         multiSigTimelock.grantSigningRole(SIGNER_TWO);
         signersArray[1] = SIGNER_TWO;
         multiSigTimelock.grantSigningRole(SIGNER_THREE);
@@ -48,7 +54,6 @@ contract MultiSigTimeLockTest is Test {
         address notAllowedAddress = makeAddr("notAllowedAddress");
 
         // ACT
-        multiSigTimelock.grantSigningRole(SIGNER_ONE);
         multiSigTimelock.grantSigningRole(SIGNER_TWO);
         multiSigTimelock.grantSigningRole(SIGNER_THREE);
         multiSigTimelock.grantSigningRole(SIGNER_FOUR);
@@ -61,7 +66,6 @@ contract MultiSigTimeLockTest is Test {
 
     function testGrantSigningRoleRevertsIfAlreadyASigner() public {
         // ACT
-        multiSigTimelock.grantSigningRole(SIGNER_ONE);
         multiSigTimelock.grantSigningRole(SIGNER_TWO);
         multiSigTimelock.grantSigningRole(SIGNER_THREE);
         multiSigTimelock.grantSigningRole(SIGNER_FOUR);

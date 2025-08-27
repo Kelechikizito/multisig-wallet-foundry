@@ -34,7 +34,7 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 /**
  * @title MultiSigTimeLock
  * @author Kelechi Kizito Ugwu
- * @dev
+ * @dev This is a role-based multisig rather than a signature-based multisig.
  */
 contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
     //////////////////////////////////////
@@ -46,8 +46,10 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
     error MultiSigTimelock__TransactionDoesNotExist(uint256 transactionId);
     error MultiSigTimelock__TransactionAlreadyExecuted(uint256 transactionId);
     error MultiSigTimeLock__UserAlreadySigned();
-    error MultiSigTimelock__NotASigner();
     error MultiSigTimeLock__UserHasNotSigned();
+    error MultiSigTimelock__ExecutionFailed();
+    error MultiSigTimelock__InsufficientConfirmations(uint256 required, uint256 current);
+    error MultiSigTimelock__TimelockNotExpired(uint256 expirationTime);
 
     //////////////////////////////////////
     /////// TYPE DECLARATIONS    /////////
@@ -91,6 +93,8 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
     //////////////////////////////////////
     event Deposit(address indexed sender, uint256 amount);
     event TransactionProposed(uint256 indexed transactionId, address indexed to, uint256 value);
+    event TransactionConfirmed(uint256 indexed transactionId, address indexed signer);
+    event TransactionExecuted(uint256 indexed transactionId, address indexed to, uint256 value);
     // event SigningRoleGranted(address indexed account);
 
     //////////////////////////////////////
@@ -115,17 +119,25 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
         _;
     }
 
-    modifier onlySigners() {
-        if (!hasRole(SIGNING_ROLE, msg.sender)) {
-            revert MultiSigTimelock__NotASigner();
-        }
-        _;
-    }
+    // modifier onlySigners() {
+    //     if (!hasRole(SIGNING_ROLE, msg.sender)) {
+    //         revert MultiSigTimelock__NotASigner();
+    //     }
+    //     _;
+    // }
 
     //////////////////////////////////////
     /////// CONSTRUCTOR          /////////
     //////////////////////////////////////
-    constructor() Ownable(msg.sender) {}
+    constructor() Ownable(msg.sender) {
+        // Automatically add deployer as first signer
+        s_signers[0] = msg.sender;
+        s_isSigner[msg.sender] = true;
+        s_signerCount = 1;
+
+        // Grant signing role to deployer
+        _grantRole(SIGNING_ROLE, msg.sender);
+    }
 
     //////////////////////////////////////
     ////// RECEIVE FUNCTIONS  ////////////
@@ -142,7 +154,7 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
      * @dev Function to grant signing role to an account
      * @param _account The address to be granted the signing role
      */
-    function grantSigningRole(address _account) external onlyOwner noneZeroAddress(_account) {
+    function grantSigningRole(address _account) external nonReentrant onlyOwner noneZeroAddress(_account) {
         if (s_isSigner[_account]) {
             revert MultiSigTimelock__AccountIsAlreadyASigner();
         }
@@ -172,8 +184,8 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
      */
     function proposeTransaction(address to, uint256 value, bytes calldata data)
         external
-        noneZeroAddress(to)
         nonReentrant
+        noneZeroAddress(to)
         onlyOwner
         returns (uint256)
     {
@@ -186,22 +198,35 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
      */
     function confirmTransaction(uint256 txnId)
         external
+        nonReentrant
         transactionExists(txnId)
         notExecuted(txnId)
-        nonReentrant
-        onlySigners
+        onlyRole(SIGNING_ROLE)
     {
         _confirmTransaction(txnId);
     }
 
     function revokeConfirmation(uint256 txnId)
         external
+        nonReentrant
         transactionExists(txnId)
         notExecuted(txnId)
-        nonReentrant
-        onlyOwner
+        onlyRole(SIGNING_ROLE)
     {
         _revokeConfirmation(txnId);
+    }
+
+    function executeTransaction(uint256 txnId)
+        external
+        nonReentrant
+        onlyRole(SIGNING_ROLE)
+        transactionExists(txnId)
+        notExecuted(txnId)
+    {
+        // Validation checks
+        // 1. Check if the transaction has enough confirmations
+        // 2. Check if the timelock period has passed
+        // 3. Execute the transaction
     }
 
     //////////////////////////////////////
@@ -246,9 +271,38 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
 
         // Increase counter
         s_transactions[txnId].confirmations++;
+
+        emit TransactionConfirmed(txnId, msg.sender);
     }
 
-    function _executeTransaction(address to, uint256 value, bytes memory data) internal {}
+    // Internal implementation
+    function _executeTransaction(uint256 txnId) internal {
+        Transaction storage txn = s_transactions[txnId];
+
+        // 1. Check if enough confirmations
+        if (txn.confirmations < REQUIRED_CONFIRMATIONS) {
+            revert MultiSigTimelock__InsufficientConfirmations(REQUIRED_CONFIRMATIONS, txn.confirmations);
+        }
+
+        // 2. Check if timelock period has passed
+        uint256 requiredDelay = _getTimelockDelay(txn.value);
+        uint256 executionTime = txn.proposedAt + requiredDelay;
+        if (block.timestamp < executionTime) {
+            revert MultiSigTimelock__TimelockNotExpired(executionTime);
+        }
+
+        // 3. Mark as executed BEFORE the external call (prevent reentrancy)
+        txn.executed = true;
+
+        // 4. Execute the transaction
+        (bool success,) = txn.to.call{value: txn.value}(txn.data);
+        if (!success) {
+            revert MultiSigTimelock__ExecutionFailed();
+        }
+
+        // 5. Emit event
+        emit TransactionExecuted(txnId, txn.to, txn.value);
+    }
 
     function _revokeConfirmation(uint256 txnId) internal {
         if (!s_signatures[txnId][msg.sender]) {
@@ -260,6 +314,30 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
 
         // Increase counter
         s_transactions[txnId].confirmations--;
+    }
+
+    //////////////////////////////////////////////
+    /////// INTERNAL VIEW/PURE FUNCTIONS  ////////
+    /////////////////////////////////////////////
+    /**
+     * @dev An internal pure function to get the timelock delay based on the value of the transaction
+     * @param value The amount of ETH to be sent
+     * @return The timelock delay in seconds
+     */
+    function _getTimelockDelay(uint256 value) internal pure returns (uint256) {
+        uint256 sevenDaysTimeDelayAmount = 100 ether;
+        uint256 twoDaysTimeDelayAmount = 10 ether;
+        uint256 oneDayTimeDelayAmount = 1 ether;
+
+        if (value >= sevenDaysTimeDelayAmount) {
+            return SEVEN_DAYS_TIME_DELAY;
+        } else if (value >= twoDaysTimeDelayAmount) {
+            return TWO_DAYS_TIME_DELAY;
+        } else if (value >= oneDayTimeDelayAmount) {
+            return ONE_DAY_TIME_DELAY;
+        } else {
+            return 0;
+        }
     }
 
     //////////////////////////////////////////////
@@ -279,6 +357,10 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
 
     function getMaximumSignerCount() external pure returns (uint256) {
         return MAX_SIGNER_COUNT;
+    }
+
+    function getSigningRole() external pure returns (bytes32) {
+        return SIGNING_ROLE;
     }
 
     function getSignerCount() external view returns (uint256) {
