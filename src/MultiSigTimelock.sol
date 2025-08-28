@@ -28,7 +28,7 @@ pragma solidity ^0.8.19;
 
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+// import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 
 /**
@@ -67,6 +67,8 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
     //////////////////////////////////////
     /////// STATE VARIABLES      /////////
     //////////////////////////////////////
+    /// @dev Constant for a no time delay
+    uint256 private constant NO_TIME_DELAY = 0;
     /// @dev Constant for a time delay of 1 day
     uint256 private constant ONE_DAY_TIME_DELAY = 24 hours;
     /// @dev Constant for a time delay of 2 days
@@ -94,6 +96,7 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
     event Deposit(address indexed sender, uint256 amount);
     event TransactionProposed(uint256 indexed transactionId, address indexed to, uint256 value);
     event TransactionConfirmed(uint256 indexed transactionId, address indexed signer);
+    event TransactionRevoked(uint256 indexed transactionId, address indexed signer);
     event TransactionExecuted(uint256 indexed transactionId, address indexed to, uint256 value);
     // event SigningRoleGranted(address indexed account);
 
@@ -193,7 +196,7 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
     }
 
     /**
-     * @dev Function to confirm a transaction
+     * @dev External Function to confirm a transaction. This function allows an approved signer to confirm a proposed transaction.
      * @param txnId The ID of the transaction to confirm
      */
     function confirmTransaction(uint256 txnId)
@@ -206,6 +209,10 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
         _confirmTransaction(txnId);
     }
 
+    /**
+     * @dev External Function to revoke a transaction. This function allows an approved signer to revoke a proposed transaction.
+     * @param txnId The ID of the transaction to revoke
+     */
     function revokeConfirmation(uint256 txnId)
         external
         nonReentrant
@@ -216,6 +223,10 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
         _revokeConfirmation(txnId);
     }
 
+    /**
+     * @dev External Function to execute a transaction. This function allows an approved signer to execute a proposed transaction.
+     * @param txnId The ID of the transaction to execute
+     */
     function executeTransaction(uint256 txnId)
         external
         nonReentrant
@@ -223,10 +234,7 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
         transactionExists(txnId)
         notExecuted(txnId)
     {
-        // Validation checks
-        // 1. Check if the transaction has enough confirmations
-        // 2. Check if the timelock period has passed
-        // 3. Execute the transaction
+        _executeTransaction(txnId);
     }
 
     //////////////////////////////////////
@@ -256,6 +264,10 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
         return transactionId;
     }
 
+    /**
+     * @dev An internal function for signers to confirm a transaction.
+     * @param txnId The transaction id(return value) after a transaction is proposed.
+     */
     function _confirmTransaction(uint256 txnId) internal {
         // For transaction #123, the mapping might look like:
         // signatures[Alice_address] = true;     // Alice signed ✓
@@ -276,14 +288,18 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
     }
 
     // Internal implementation
+    /**
+     * @dev This is an internal implementation of the execute transaction. It follows the CEI pattern.
+     * @param txnId the transaction id of the confirmed transaction
+     */
     function _executeTransaction(uint256 txnId) internal {
         Transaction storage txn = s_transactions[txnId];
 
+        // CHECKS
         // 1. Check if enough confirmations
         if (txn.confirmations < REQUIRED_CONFIRMATIONS) {
             revert MultiSigTimelock__InsufficientConfirmations(REQUIRED_CONFIRMATIONS, txn.confirmations);
         }
-
         // 2. Check if timelock period has passed
         uint256 requiredDelay = _getTimelockDelay(txn.value);
         uint256 executionTime = txn.proposedAt + requiredDelay;
@@ -291,9 +307,11 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
             revert MultiSigTimelock__TimelockNotExpired(executionTime);
         }
 
+        // EFFECTS
         // 3. Mark as executed BEFORE the external call (prevent reentrancy)
         txn.executed = true;
 
+        // INTERACTIONS
         // 4. Execute the transaction
         (bool success,) = txn.to.call{value: txn.value}(txn.data);
         if (!success) {
@@ -312,8 +330,10 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
         // Remove their signature
         s_signatures[txnId][msg.sender] = false;
 
-        // Increase counter
+        // Decrease counter
         s_transactions[txnId].confirmations--;
+
+        emit TransactionRevoked(txnId, msg.sender);
     }
 
     //////////////////////////////////////////////
@@ -336,7 +356,7 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
         } else if (value >= oneDayTimeDelayAmount) {
             return ONE_DAY_TIME_DELAY;
         } else {
-            return 0;
+            return NO_TIME_DELAY;
         }
     }
 
