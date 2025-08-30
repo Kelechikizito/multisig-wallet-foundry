@@ -3,9 +3,11 @@ pragma solidity ^0.8.19;
 
 import {Test, console2} from "forge-std/Test.sol";
 import {MultiSigTimelock} from "src/MultiSigTimelock.sol";
+import {EthRejector} from "test/utils/EthRejector.sol";
 
 contract MultiSigTimeLockTest is Test {
     MultiSigTimelock multiSigTimelock;
+    EthRejector ethRejector;
 
     address public OWNER = address(this);
     address public SIGNER_TWO = makeAddr("signer_two");
@@ -83,12 +85,46 @@ contract MultiSigTimeLockTest is Test {
         multiSigTimelock.grantSigningRole(SIGNER_FOUR);
     }
 
+    function testGrantSigningRoleRevertsIfZeroAddresses() public {
+        vm.expectRevert(MultiSigTimelock.MultiSigTimelock__InvalidAddress.selector);
+        multiSigTimelock.grantSigningRole(address(0));
+    }
+
     modifier grantSigningRoles() {
         multiSigTimelock.grantSigningRole(SIGNER_TWO);
         multiSigTimelock.grantSigningRole(SIGNER_THREE);
         multiSigTimelock.grantSigningRole(SIGNER_FOUR);
         multiSigTimelock.grantSigningRole(SIGNER_FIVE);
         _;
+    }
+
+    /////////////////////////////////////
+    /// REVOKE SIGNING ROLE TESTS   /////
+    /////////////////////////////////////
+    function testRevokeSigningRole() public grantSigningRoles {
+        multiSigTimelock.revokeSigningRole(SIGNER_TWO);
+        multiSigTimelock.revokeSigningRole(SIGNER_THREE);
+        multiSigTimelock.revokeSigningRole(SIGNER_FOUR);
+        multiSigTimelock.revokeSigningRole(SIGNER_FIVE);
+    }
+
+    function testRevokeSigningRoleRevertsIfNotASigner() public grantSigningRoles {
+        multiSigTimelock.revokeSigningRole(SIGNER_TWO);
+        multiSigTimelock.revokeSigningRole(SIGNER_THREE);
+        multiSigTimelock.revokeSigningRole(SIGNER_FOUR);
+
+        vm.expectRevert(MultiSigTimelock.MultiSigTimelock__AccountIsNotASigner.selector);
+        multiSigTimelock.revokeSigningRole(SIGNER_FOUR);
+    }
+
+    function testRevokeSigningRoleRevertsIfZeroAddresses() public grantSigningRoles {
+        vm.expectRevert(MultiSigTimelock.MultiSigTimelock__InvalidAddress.selector);
+        multiSigTimelock.revokeSigningRole(address(0));
+    }
+
+    function testRevokeSigningRoleRevertsIfOnlyOneSigner() public {
+        vm.expectRevert(MultiSigTimelock.MultiSigTimelock__CannotRevokeLastSigner.selector);
+        multiSigTimelock.revokeSigningRole(address(this));
     }
 
     /////////////////////////////////////
@@ -200,6 +236,32 @@ contract MultiSigTimeLockTest is Test {
         multiSigTimelock.confirmTransaction(txnId);
     }
 
+    function testConfirmTransactionRevertsIfTransactionHasExecuted() public grantSigningRoles {
+        // ARRANGE
+        vm.deal(address(multiSigTimelock), OWNER_BALANCE_TWO);
+        vm.prank(OWNER);
+        uint256 txnId = multiSigTimelock.proposeTransaction(SPENDER_ONE, OWNER_BALANCE_ONE, hex"");
+
+        // ACT & ASSERT
+        vm.prank(OWNER);
+        multiSigTimelock.confirmTransaction(txnId);
+        vm.prank(SIGNER_TWO);
+        multiSigTimelock.confirmTransaction(txnId);
+        vm.prank(SIGNER_THREE);
+        multiSigTimelock.confirmTransaction(txnId);
+        vm.prank(SIGNER_FOUR);
+        multiSigTimelock.confirmTransaction(txnId);
+        vm.prank(SIGNER_FIVE);
+        multiSigTimelock.confirmTransaction(txnId);
+
+        vm.prank(OWNER);
+        multiSigTimelock.executeTransaction(txnId);
+
+        vm.prank(OWNER);
+        vm.expectRevert(abi.encodePacked(MultiSigTimelock.MultiSigTimelock__TransactionAlreadyExecuted.selector, txnId));
+        multiSigTimelock.confirmTransaction(txnId);
+    }
+
     // only role tests will be written after i finish the execute function
     /////////////////////////////////////
     /// REVOKE CONFIRMATION TESTS    /////
@@ -287,6 +349,139 @@ contract MultiSigTimeLockTest is Test {
         multiSigTimelock.revokeConfirmation(txnId);
     }
 
+    function testRevokeConfirmationRevertsIfTransactionHasExecuted() public grantSigningRoles {
+        // ARRANGE
+        vm.deal(address(multiSigTimelock), OWNER_BALANCE_TWO);
+        vm.prank(OWNER);
+        uint256 txnId = multiSigTimelock.proposeTransaction(SPENDER_ONE, OWNER_BALANCE_ONE, hex"");
+
+        // ACT & ASSERT
+        vm.prank(OWNER);
+        multiSigTimelock.confirmTransaction(txnId);
+        vm.prank(SIGNER_TWO);
+        multiSigTimelock.confirmTransaction(txnId);
+        vm.prank(SIGNER_THREE);
+        multiSigTimelock.confirmTransaction(txnId);
+        vm.prank(SIGNER_FOUR);
+        multiSigTimelock.confirmTransaction(txnId);
+        vm.prank(SIGNER_FIVE);
+        multiSigTimelock.confirmTransaction(txnId);
+
+        vm.prank(OWNER);
+        multiSigTimelock.executeTransaction(txnId);
+
+        vm.prank(OWNER);
+        vm.expectRevert(abi.encodePacked(MultiSigTimelock.MultiSigTimelock__TransactionAlreadyExecuted.selector, txnId));
+        multiSigTimelock.revokeConfirmation(txnId);
+    }
+
+    ///////////////////////////////////////
+    /// EXECUTE TRANSACTION TESTS    /////
+    /////////////////////////////////////
+    function testExecuteTransactionSuccessfully() public grantSigningRoles {
+        // ARRANGE
+        // vm.deal(OWNER, OWNER_BALANCE_TWO); //
+        vm.deal(address(multiSigTimelock), OWNER_BALANCE_TWO);
+        console2.log("OWNER BALANCE: ", OWNER.balance);
+        vm.prank(OWNER);
+        uint256 txnId = multiSigTimelock.proposeTransaction(SPENDER_ONE, OWNER_BALANCE_ONE, hex"");
+
+        // ACT
+        vm.prank(OWNER);
+        multiSigTimelock.confirmTransaction(txnId);
+        vm.prank(SIGNER_TWO);
+        multiSigTimelock.confirmTransaction(txnId);
+        vm.prank(SIGNER_THREE);
+        multiSigTimelock.confirmTransaction(txnId);
+        vm.prank(SIGNER_FOUR);
+        multiSigTimelock.confirmTransaction(txnId);
+        vm.prank(SIGNER_FIVE);
+        multiSigTimelock.confirmTransaction(txnId);
+
+        vm.prank(OWNER);
+        multiSigTimelock.executeTransaction(txnId);
+    }
+
+    function testExecuteTransactionRevertsIfLessThanTheRequiredConfirmations() public grantSigningRoles {
+        // ARRANGE
+        // vm.deal(OWNER, OWNER_BALANCE_TWO); //
+        vm.deal(address(multiSigTimelock), OWNER_BALANCE_TWO);
+        vm.prank(OWNER);
+        uint256 txnId = multiSigTimelock.proposeTransaction(SPENDER_ONE, OWNER_BALANCE_ONE, hex"");
+
+        // ACT
+        vm.prank(OWNER);
+        multiSigTimelock.confirmTransaction(txnId);
+        vm.prank(SIGNER_TWO);
+        multiSigTimelock.confirmTransaction(txnId);
+
+        vm.prank(OWNER);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                MultiSigTimelock.MultiSigTimelock__InsufficientConfirmations.selector,
+                multiSigTimelock.getRequiredConfirmations(),
+                multiSigTimelock.getTransaction(txnId).confirmations
+            )
+        );
+        multiSigTimelock.executeTransaction(txnId);
+    }
+
+    function testExecuteTransactionRevertsIfTimelockHasNotExpired() public grantSigningRoles {
+        // ARRANGE
+        // vm.deal(OWNER, OWNER_BALANCE_TWO); //
+        vm.deal(address(multiSigTimelock), OWNER_BALANCE_THREE);
+        vm.prank(OWNER);
+        uint256 txnId = multiSigTimelock.proposeTransaction(SPENDER_ONE, OWNER_BALANCE_TWO, hex"");
+
+        // ACT
+        vm.prank(OWNER);
+        multiSigTimelock.confirmTransaction(txnId);
+        vm.prank(SIGNER_TWO);
+        multiSigTimelock.confirmTransaction(txnId);
+        vm.prank(SIGNER_THREE);
+        multiSigTimelock.confirmTransaction(txnId);
+
+        vm.prank(OWNER);
+        vm.expectRevert();
+        multiSigTimelock.executeTransaction(txnId);
+    }
+
+    function testExecuteTransactionRevertsIfExecutionFails() public grantSigningRoles {
+        // ARRANGE
+        // vm.deal(OWNER, OWNER_BALANCE_TWO); //
+        ethRejector = new EthRejector();
+        vm.deal(address(multiSigTimelock), OWNER_BALANCE_THREE);
+        vm.prank(OWNER);
+        uint256 txnId = multiSigTimelock.proposeTransaction(address(ethRejector), OWNER_BALANCE_ONE, hex"");
+
+        // ACT
+        vm.prank(OWNER);
+        multiSigTimelock.confirmTransaction(txnId);
+        vm.prank(SIGNER_TWO);
+        multiSigTimelock.confirmTransaction(txnId);
+        vm.prank(SIGNER_THREE);
+        multiSigTimelock.confirmTransaction(txnId);
+
+        vm.prank(OWNER);
+        vm.expectRevert(MultiSigTimelock.MultiSigTimelock__ExecutionFailed.selector);
+        multiSigTimelock.executeTransaction(txnId);
+    }
+
+    ///////////////////////////////
+    /// RECEIVE FUNCTION TEST /////
+    ///////////////////////////////
+    function testReceiveFunction() public {
+        // ARRANGE
+        vm.deal(OWNER, OWNER_BALANCE_FOUR);
+
+        // ACT
+        (bool success,) = address(multiSigTimelock).call{value: OWNER_BALANCE_FOUR}("");
+        require(success, "Transfer failed.");
+
+        // ASSERT
+        assertEq(address(multiSigTimelock).balance, OWNER_BALANCE_FOUR);
+    }
+
     //////////////////////////////
     /// GETTER FUNCTIONS TEST /////
     //////////////////////////////
@@ -300,5 +495,13 @@ contract MultiSigTimeLockTest is Test {
         assertEq(multiSigTimelock.getSevenDaysTimeDelay(), sevenDaysTimeDelay);
         assertEq(multiSigTimelock.getTwoDaysTimeDelay(), twoDaysTimeDelay);
         assertEq(multiSigTimelock.getOneDayTimeDelay(), oneDayTimeDelay);
+    }
+
+    function testGetMaxSignerCount() public view {
+        // ARRANGE
+        uint256 maxSignerCount = 5;
+
+        // ACT & ASSERT
+        assertEq(multiSigTimelock.getMaximumSignerCount(), maxSignerCount);
     }
 }

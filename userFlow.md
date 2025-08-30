@@ -12,6 +12,7 @@ Admin → Deploys contract → Sets 5 owners → Requires 3 signatures
 - Any transaction needs 3 out of 5 signatures to execute
 - Time delays: >10 ETH = 48 hours, >1 ETH = 24 hours, <1 ETH = instant
 
+
 ## Daily Transaction Flow
 
 ### **Scenario 1: Small Transaction (0.5 ETH)**

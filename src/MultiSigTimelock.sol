@@ -34,7 +34,7 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 /**
  * @title MultiSigTimeLock
  * @author Kelechi Kizito Ugwu
- * @dev This is a role-based multisig rather than a signature-based multisig.
+ * @dev This is a role-based multisig rather than a signature-based multisig. It implements a Timelock feature
  */
 contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
     //////////////////////////////////////
@@ -49,7 +49,9 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
     error MultiSigTimeLock__UserHasNotSigned();
     error MultiSigTimelock__ExecutionFailed();
     error MultiSigTimelock__InsufficientConfirmations(uint256 required, uint256 current);
-    error MultiSigTimelock__TimelockNotExpired(uint256 expirationTime);
+    error MultiSigTimelock__TimelockHasNotExpired(uint256 expirationTime);
+    error MultiSigTimelock__AccountIsNotASigner();
+    error MultiSigTimelock__CannotRevokeLastSigner();
 
     //////////////////////////////////////
     /////// TYPE DECLARATIONS    /////////
@@ -173,8 +175,42 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
         // emit SigningRoleGranted(_account); // commented this out because the inherited function(_grantRole) emits the event already
     }
 
-    function revokeSigningRole(address _account) external onlyOwner {
-        // Write your validation checks here
+    /**
+     * @dev Function to revoke signing role of an account. This function uses the "swap and pop" pattern for efficient array removal when order doesn't matter(in this case).
+     * @param _account The address to be revoked of the signing role
+     */
+    function revokeSigningRole(address _account) external nonReentrant onlyOwner noneZeroAddress(_account) {
+        // CHECKS
+        if (!s_isSigner[_account]) {
+            revert MultiSigTimelock__AccountIsNotASigner();
+        }
+        // Prevent revoking the last signer (would break the multisig), moreover, the last signer is the owner of the contract(wallet)
+        if (s_signerCount <= 1) {
+            revert MultiSigTimelock__CannotRevokeLastSigner();
+        }
+
+        // Find the index of the account in the array
+        uint256 indexToRemove = type(uint256).max; // Use max as "not found" indicator
+        for (uint256 i = 0; i < s_signerCount; i++) {
+            if (s_signers[i] == _account) {
+                indexToRemove = i;
+                break;
+            }
+        }
+
+        // Gas-efficient array removal: move last element to removed position
+        if (indexToRemove < s_signerCount - 1) {
+            // Move the last signer to the position of the removed signer
+            s_signers[indexToRemove] = s_signers[s_signerCount - 1];
+        }
+
+        // Clear the last position and decrement count
+        s_signers[s_signerCount - 1] = address(0);
+        s_signerCount -= 1;
+
+        s_isSigner[_account] = false;
+        _revokeRole(SIGNING_ROLE, _account);
+
         // Don't implement the array removal yet - just think through what you need to validate
     }
 
@@ -240,7 +276,7 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
     //////////////////////////////////////
     /////// INTERNAL FUNCTIONS    ////////
     //////////////////////////////////////
-    // KAYKAY REMEMBER, CONVENTIONALLY, INTERNAL FUNCTIONS ARE PREFIXED WITH AN UNDERSCORE
+    // REMEMBER, CONVENTIONALLY, INTERNAL FUNCTIONS ARE PREFIXED WITH AN UNDERSCORE
     /**
      * @dev An internal function to propose a transaction
      * @param to The address to which the transaction is proposed
@@ -287,7 +323,6 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
         emit TransactionConfirmed(txnId, msg.sender);
     }
 
-    // Internal implementation
     /**
      * @dev This is an internal implementation of the execute transaction. It follows the CEI pattern.
      * @param txnId the transaction id of the confirmed transaction
@@ -304,7 +339,7 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
         uint256 requiredDelay = _getTimelockDelay(txn.value);
         uint256 executionTime = txn.proposedAt + requiredDelay;
         if (block.timestamp < executionTime) {
-            revert MultiSigTimelock__TimelockNotExpired(executionTime);
+            revert MultiSigTimelock__TimelockHasNotExpired(executionTime);
         }
 
         // EFFECTS
@@ -313,7 +348,7 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
 
         // INTERACTIONS
         // 4. Execute the transaction
-        (bool success,) = txn.to.call{value: txn.value}(txn.data);
+        (bool success,) = payable(txn.to).call{value: txn.value}(txn.data);
         if (!success) {
             revert MultiSigTimelock__ExecutionFailed();
         }
@@ -389,5 +424,18 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
 
     function getSigners() external view returns (address[5] memory) {
         return s_signers;
+    }
+
+    function getRequiredConfirmations() external pure returns (uint256) {
+        return REQUIRED_CONFIRMATIONS;
+    }
+
+    /**
+     * @dev Get transaction details by ID
+     * @param transactionId The ID of the transaction to retrieve
+     * @return The transaction struct
+     */
+    function getTransaction(uint256 transactionId) external view returns (Transaction memory) {
+        return s_transactions[transactionId];
     }
 }
