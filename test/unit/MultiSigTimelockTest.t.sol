@@ -4,10 +4,12 @@ pragma solidity ^0.8.19;
 import {Test, console2} from "forge-std/Test.sol";
 import {MultiSigTimelock} from "src/MultiSigTimelock.sol";
 import {EthRejector} from "test/utils/EthRejector.sol";
+import {TestTimelockDelay} from "test/utils/TestTimelockDelay.sol";
 
 contract MultiSigTimeLockTest is Test {
     MultiSigTimelock multiSigTimelock;
     EthRejector ethRejector;
+    TestTimelockDelay testTimelockDelay;
 
     address public OWNER = address(this);
     address public SIGNER_TWO = makeAddr("signer_two");
@@ -467,6 +469,31 @@ contract MultiSigTimeLockTest is Test {
         multiSigTimelock.executeTransaction(txnId);
     }
 
+    function testExecuteTransactionRevertsIfNotEnoughBalance() public grantSigningRoles {
+        // ARRANGE
+        // vm.deal(OWNER, OWNER_BALANCE_TWO); //
+        vm.deal(address(multiSigTimelock), 0);
+        vm.prank(OWNER);
+        uint256 txnId = multiSigTimelock.proposeTransaction(SPENDER_ONE, OWNER_BALANCE_ONE, hex"");
+
+        // ACT
+        vm.prank(OWNER);
+        multiSigTimelock.confirmTransaction(txnId);
+        vm.prank(SIGNER_TWO);
+        multiSigTimelock.confirmTransaction(txnId);
+        vm.prank(SIGNER_THREE);
+        multiSigTimelock.confirmTransaction(txnId);
+
+        vm.prank(OWNER);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                MultiSigTimelock.MultiSigTimelock__InsufficientBalance.selector,
+                address(multiSigTimelock).balance
+            )
+        );
+        multiSigTimelock.executeTransaction(txnId);
+    }
+
     ///////////////////////////////
     /// RECEIVE FUNCTION TEST /////
     ///////////////////////////////
@@ -480,6 +507,21 @@ contract MultiSigTimeLockTest is Test {
 
         // ASSERT
         assertEq(address(multiSigTimelock).balance, OWNER_BALANCE_FOUR);
+    }
+
+    ///////////////////////////////
+    /// TIMELOCKDELAY     TEST /////
+    ///////////////////////////////
+    function testTimeLockDelayReturnsCorrectValues() public {
+        // ARRANGE
+        testTimelockDelay = new TestTimelockDelay();
+        uint256 sevenDaysTimeDelayAmount = 100 ether;
+        uint256 twoDaysTimeDelayAmount = 10 ether;
+        // uint256 oneDayTimeDelayAmount = 1 ether;
+
+        // ACT & ASSERT
+        assertEq(testTimelockDelay.getTimelockDelay(sevenDaysTimeDelayAmount), multiSigTimelock.getSevenDaysTimeDelay());
+        assertEq(testTimelockDelay.getTimelockDelay(twoDaysTimeDelayAmount), multiSigTimelock.getTwoDaysTimeDelay());
     }
 
     //////////////////////////////

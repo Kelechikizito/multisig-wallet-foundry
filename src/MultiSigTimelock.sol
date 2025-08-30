@@ -34,7 +34,13 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 /**
  * @title MultiSigTimeLock
  * @author Kelechi Kizito Ugwu
- * @dev This is a role-based multisig rather than a signature-based multisig. It implements a Timelock feature
+ * @dev This is a role-based multisig rather than a signature-based multisig. It implements a Timelock feature when executing transactions.
+ * The contract allows up to five signers, with a minimum of three required to confirm a transaction before it can be executed.
+ * The timelock duration is determined by the value of the transaction:
+ * - Transactions below 1 ETH have no timelock.
+ * - Transactions between 1 ETH and 10 ETH have a timelock of 1 day.
+ * - Transactions between 10 ETH and 100 ETH have a timelock of 2 days.
+ * - Transactions of 100 ETH and above have a timelock of 7 days.
  */
 contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
     //////////////////////////////////////
@@ -52,6 +58,7 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
     error MultiSigTimelock__TimelockHasNotExpired(uint256 expirationTime);
     error MultiSigTimelock__AccountIsNotASigner();
     error MultiSigTimelock__CannotRevokeLastSigner();
+    error MultiSigTimelock__InsufficientBalance(uint256 contractBalance);
 
     //////////////////////////////////////
     /////// TYPE DECLARATIONS    /////////
@@ -81,35 +88,49 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
     uint256 private constant MAX_SIGNER_COUNT = 5;
     /// @dev Constant for the minimum required number of confirmations to approve a transaction - 3
     uint256 private constant REQUIRED_CONFIRMATIONS = 3;
+    /// @dev The role identifier for the signing role
     bytes32 private constant SIGNING_ROLE = keccak256("SIGNING_ROLE");
 
-    /// @dev State Variable tracks how many signer slots are filled
+    /// @dev State variable tracks how many signer slots are filled
     uint256 private s_signerCount;
     /// @dev The fixed list of five approved addresses - the five accounts allowed to sign transactions.
     address[5] private s_signers;
+    /// @dev A mapping to quickly check if an address is an approved signer
     mapping(address user => bool signer) private s_isSigner;
+    /// @dev A state variable to store the count of proposed transactions
     uint256 private s_transactionCount;
+    /// @dev A mapping to store all proposed transactions by their ID
     mapping(uint256 transactionId => Transaction) private s_transactions;
+    /// @dev A nested mapping to track which signers have signed which transactions
     mapping(uint256 transactionId => mapping(address user => bool userHasSignedCorrectly)) private s_signatures;
 
     //////////////////////////////////////
     /////// EVENTS               /////////
     //////////////////////////////////////
+    /// @notice Emitted when a ETH is sent to the contract, i.e. When the receive function is triggered
     event Deposit(address indexed sender, uint256 amount);
+    /// @notice Emitted when a transaction is proposed
     event TransactionProposed(uint256 indexed transactionId, address indexed to, uint256 value);
+    /// @notice Emitted when a transaction is confirmed by a signer
     event TransactionConfirmed(uint256 indexed transactionId, address indexed signer);
+    /// @notice Emitted when a transaction is revoked by a signer
     event TransactionRevoked(uint256 indexed transactionId, address indexed signer);
+    /// @notice Emitted when a transaction is executed
     event TransactionExecuted(uint256 indexed transactionId, address indexed to, uint256 value);
     // event SigningRoleGranted(address indexed account);
 
     //////////////////////////////////////
     /////// MODIFIERS            /////////
     //////////////////////////////////////
+    /// @notice Modifier to check if an address is not the zero address
+    /// @param account The address to be checked
     modifier noneZeroAddress(address account) {
         if (account == address(0)) revert MultiSigTimelock__InvalidAddress();
         _;
     }
 
+    /// @notice Modifier to check if a transaction exists
+    /// @param _transactionId The ID of the transaction to be checked
     modifier transactionExists(uint256 _transactionId) {
         if (_transactionId >= s_transactionCount) {
             revert MultiSigTimelock__TransactionDoesNotExist(_transactionId);
@@ -117,6 +138,8 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
         _;
     }
 
+    /// @notice Modifier to check if a transaction has not been executed
+    /// @param _transactionId The ID of the transaction to be checked
     modifier notExecuted(uint256 _transactionId) {
         if (s_transactions[_transactionId].executed) {
             revert MultiSigTimelock__TransactionAlreadyExecuted(_transactionId);
@@ -134,6 +157,7 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
     //////////////////////////////////////
     /////// CONSTRUCTOR          /////////
     //////////////////////////////////////
+    /// @dev The constructor sets the deployer as the initial owner and first signer
     constructor() Ownable(msg.sender) {
         // Automatically add deployer as first signer
         s_signers[0] = msg.sender;
@@ -147,6 +171,7 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
     //////////////////////////////////////
     ////// RECEIVE FUNCTIONS  ////////////
     //////////////////////////////////////
+    /// @dev The receive function allows the contract to accept ETH deposits and emits a Deposit event.
     receive() external payable {
         // What should happen when ETH is sent? An Event should be emitted.
         emit Deposit(msg.sender, msg.value);
@@ -246,8 +271,8 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
     }
 
     /**
-     * @dev External Function to revoke a transaction. This function allows an approved signer to revoke a proposed transaction.
-     * @param txnId The ID of the transaction to revoke
+     * @dev External Function to revoke a confirmation. This function allows an approved signer to revoke a cobnfirmation.
+     * @param txnId The ID of the confirmed transaction to revoke
      */
     function revokeConfirmation(uint256 txnId)
         external
@@ -341,6 +366,9 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
         if (block.timestamp < executionTime) {
             revert MultiSigTimelock__TimelockHasNotExpired(executionTime);
         }
+        if (txn.value > address(this).balance) {
+            revert MultiSigTimelock__InsufficientBalance(address(this).balance);
+        }
 
         // EFFECTS
         // 3. Mark as executed BEFORE the external call (prevent reentrancy)
@@ -357,6 +385,10 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
         emit TransactionExecuted(txnId, txn.to, txn.value);
     }
 
+    /**
+     * @dev An internal function for signers to revoke a confirmation.
+     * @param txnId The transaction id of the confirmed transaction to be revoked.
+     */
     function _revokeConfirmation(uint256 txnId) internal {
         if (!s_signatures[txnId][msg.sender]) {
             revert MultiSigTimeLock__UserHasNotSigned();
@@ -398,34 +430,66 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
     //////////////////////////////////////////////
     /////// EXTERNAL VIEW/PURE FUNCTIONS  ////////
     /////////////////////////////////////////////
+    /**
+     * @dev A getter function to return the no time delay constant.
+     * @return The no time delay constant
+     */
     function getOneDayTimeDelay() external pure returns (uint256) {
         return ONE_DAY_TIME_DELAY;
     }
 
+    /**
+     * @dev A getter function to return the two days time delay constant.
+     * @return The two days time delay constant
+     */
     function getTwoDaysTimeDelay() external pure returns (uint256) {
         return TWO_DAYS_TIME_DELAY;
     }
 
+    /**
+     * @dev A getter function to return the seven days time delay constant.
+     * @return The seven days time delay constant
+     */
     function getSevenDaysTimeDelay() external pure returns (uint256) {
         return SEVEN_DAYS_TIME_DELAY;
     }
 
+    /**
+     * @dev A getter function to return the maximum signer count constant.
+     * @return The maximum signer count constant
+     */
     function getMaximumSignerCount() external pure returns (uint256) {
         return MAX_SIGNER_COUNT;
     }
 
+    /**
+     * @dev A getter function to return the signing role constant.
+     * @return The signing role constant
+     */
     function getSigningRole() external pure returns (bytes32) {
         return SIGNING_ROLE;
     }
 
+    /**
+     * @dev A getter function to return the current number of signers.
+     * @return The current number of signers
+     */
     function getSignerCount() external view returns (uint256) {
         return s_signerCount;
     }
 
+    /**
+     * @dev A getter function to return the list of signers.
+     * @return The list of signers
+     */
     function getSigners() external view returns (address[5] memory) {
         return s_signers;
     }
 
+    /**
+     * @dev A getter function to return the number of required confirmations.
+     * @return the required number of confirmations
+     */
     function getRequiredConfirmations() external pure returns (uint256) {
         return REQUIRED_CONFIRMATIONS;
     }
