@@ -34,7 +34,7 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 /**
  * @title MultiSigTimeLock
  * @author Kelechi Kizito Ugwu
- * @dev This is a role-based multisig rather than a signature-based multisig. It implements a Timelock feature when executing transactions.
+ * @dev This is a role-based multisig rather than a signature-based multisig(albeit, this choice is more gas-intensive). It implements a Timelock feature when executing transactions.
  * The contract allows up to five signers, with a minimum of three required to confirm a transaction before it can be executed.
  * The timelock duration is determined by the value of the transaction:
  * - Transactions below 1 ETH have no timelock.
@@ -202,6 +202,8 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
 
     /**
      * @dev Function to revoke signing role of an account. This function uses the "swap and pop" pattern for efficient array removal when order doesn't matter(in this case).
+     * @notice Adding the address(0) in place of the removed signer instead of leaving it blank, is not functionally necessary, but it's a best practice for gas efficiency, debugging clarity, and preventing future bugs.
+     * @notice Thereafter, granting signing roles would be no problem, the zero address would simply be overwritten.
      * @param _account The address to be revoked of the signing role
      */
     function revokeSigningRole(address _account) external nonReentrant onlyOwner noneZeroAddress(_account) {
@@ -209,7 +211,7 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
         if (!s_isSigner[_account]) {
             revert MultiSigTimelock__AccountIsNotASigner();
         }
-        // Prevent revoking the last signer (would break the multisig), moreover, the last signer is the owner of the contract(wallet)
+        // Prevent revoking the first signer (would break the multisig), moreover, the first signer is the owner of the contract(wallet)
         if (s_signerCount <= 1) {
             revert MultiSigTimelock__CannotRevokeLastSigner();
         }
@@ -235,8 +237,6 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
 
         s_isSigner[_account] = false;
         _revokeRole(SIGNING_ROLE, _account);
-
-        // Don't implement the array removal yet - just think through what you need to validate
     }
 
     /**

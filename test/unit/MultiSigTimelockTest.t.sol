@@ -487,8 +487,7 @@ contract MultiSigTimeLockTest is Test {
         vm.prank(OWNER);
         vm.expectRevert(
             abi.encodeWithSelector(
-                MultiSigTimelock.MultiSigTimelock__InsufficientBalance.selector,
-                address(multiSigTimelock).balance
+                MultiSigTimelock.MultiSigTimelock__InsufficientBalance.selector, address(multiSigTimelock).balance
             )
         );
         multiSigTimelock.executeTransaction(txnId);
