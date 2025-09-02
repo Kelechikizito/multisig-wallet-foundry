@@ -13,7 +13,7 @@ import {MultiSigTimelock} from "src/MultiSigTimelock.sol";
  */
 contract ProposeTransactionScript is Script {
     address constant RECEIVING_ADDRESS = 0x93923B42Ff4bDF533634Ea71bF626c90286D27A0;
-    uint256 constant AMOUNT = 5e16;
+    uint256 constant AMOUNT = 5e15;
     bytes constant DATA = hex"";
 
     function run() public {

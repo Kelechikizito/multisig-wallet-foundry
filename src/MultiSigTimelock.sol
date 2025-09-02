@@ -271,7 +271,7 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
     }
 
     /**
-     * @dev External Function to revoke a confirmation. This function allows an approved signer to revoke a cobnfirmation.
+     * @dev External Function to revoke a confirmation. This function allows an approved signer to revoke a confirmation. this can come in handy if a signer mistakenly confirmed a transaction or confirmed a malicious transaction.
      * @param txnId The ID of the confirmed transaction to revoke
      */
     function revokeConfirmation(uint256 txnId)

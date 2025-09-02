@@ -8,7 +8,7 @@ import {MultiSigTimelock} from "src/MultiSigTimelock.sol";
 /**
  * @title GrantSigningRole
  * @author Kelechi Kizito Ugwu
- * @notice This script grants signing roles to multiple signers in a MultiSigTimelock contract.
+ * @notice This script grants signing roles to multiple signers in the MultiSigTimelock contract.
  */
 contract GrantSigningRole is Script {
     address constant SIGNER_TWO = 0x93923B42Ff4bDF533634Ea71bF626c90286D27A0;

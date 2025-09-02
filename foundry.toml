@@ -5,7 +5,9 @@ libs = ["lib"]
 remappings = [
     '@chainlink/contracts/=lib/chainlink-brownie-contracts/contracts/',
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts",
+    "foundry-devops/=lib/foundry-devops/",
 ]
+fs_permissions = [{ access = "read-write", path = "./" }]
 
 
 [invariant]

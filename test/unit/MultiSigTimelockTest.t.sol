@@ -5,11 +5,19 @@ import {Test, console2} from "forge-std/Test.sol";
 import {MultiSigTimelock} from "src/MultiSigTimelock.sol";
 import {EthRejector} from "test/utils/EthRejector.sol";
 import {TestTimelockDelay} from "test/utils/TestTimelockDelay.sol";
+import {DeployMultiSigTimelock} from "script/DeployMultiSigTimelock.s.sol";
+import {GrantSigningRole} from "script/GrantSigningRole.s.sol";
+import {ProposeTransactionScript} from "script/Interact.s.sol";
+import {ConfirmTransactionScript} from "script/Interact.s.sol";
+import {ExecuteTransactionScript} from "script/Interact.s.sol";
 
 contract MultiSigTimeLockTest is Test {
     MultiSigTimelock multiSigTimelock;
     EthRejector ethRejector;
     TestTimelockDelay testTimelockDelay;
+
+    DeployMultiSigTimelock deployer;
+    GrantSigningRole grantor;
 
     address public OWNER = address(this);
     address public SIGNER_TWO = makeAddr("signer_two");
@@ -544,5 +552,59 @@ contract MultiSigTimeLockTest is Test {
 
         // ACT & ASSERT
         assertEq(multiSigTimelock.getMaximumSignerCount(), maxSignerCount);
+    }
+
+    ///////////////////////////////
+    /// SCRIPT           TEST /////
+    ///////////////////////////////
+    function testDeployScript() public {
+        deployer = new DeployMultiSigTimelock();
+        MultiSigTimelock deployedContract = deployer.deployMultiSigTimelock();
+        MultiSigTimelock deployedContractWithRun = deployer.run();
+        assertTrue(address(deployedContract) != address(0));
+        assertTrue(address(deployedContractWithRun) != address(0));
+    }
+
+    modifier deployScript() {
+        deployer = new DeployMultiSigTimelock();
+        _;
+    }
+
+    function testGrantSigningRoleScript() public {
+        deployer = new DeployMultiSigTimelock();
+        // MultiSigTimelock deployedContract = deployer.deployMultiSigTimelock();
+        MultiSigTimelock deployedContractWithRun = deployer.run();
+
+        grantor = new GrantSigningRole();
+        // grantor.run();
+        grantor.grantSigningRole(payable(address(deployedContractWithRun)));
+        assertEq(deployedContractWithRun.getSignerCount(), 5);
+    }
+
+    function testProposeTransactionScript() public {
+        deployer = new DeployMultiSigTimelock();
+        MultiSigTimelock deployedContractWithRun = deployer.run();
+
+        grantor = new GrantSigningRole();
+        grantor.grantSigningRole(payable(address(deployedContractWithRun)));
+
+        ProposeTransactionScript proposer = new ProposeTransactionScript();
+        proposer.proposeTransaction(payable(address(deployedContractWithRun)));
+        // assertEq(deployedContractWithRun.getTransactionCount(), 1);
+    }
+
+    function testConfirmTransactionScript() public {
+        deployer = new DeployMultiSigTimelock();
+        MultiSigTimelock deployedContractWithRun = deployer.run();
+
+        grantor = new GrantSigningRole();
+        grantor.grantSigningRole(payable(address(deployedContractWithRun)));
+
+        ProposeTransactionScript proposer = new ProposeTransactionScript();
+        proposer.proposeTransaction(payable(address(deployedContractWithRun)));
+
+        ConfirmTransactionScript confirmer = new ConfirmTransactionScript();
+        confirmer.confirmTransaction(payable(address(deployedContractWithRun)), 0);
+        assertEq(deployedContractWithRun.getTransaction(0).confirmations, 1);
     }
 }

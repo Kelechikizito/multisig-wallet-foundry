@@ -41,5 +41,23 @@ ifeq ($(findstring --network sepolia,$(ARGS)),--network sepolia)
 	NETWORK_ARGS := --rpc-url $(SEPOLIA_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --verify --etherscan-api-key $(ETHERSCAN_API_KEY) -vvvv
 endif
 
-deploy:
-	@forge script script/DeployDSC.s.sol:DeployDSC $(NETWORK_ARGS)
+deploy-eth-sepolia:
+	@forge script script/DeployMultiSigTimelock.s.sol:DeployMultiSigTimelock --rpc-url $(SEPOLIA_RPC_URL) --account sepolia-acc --broadcast --verify --etherscan-api-key $(ETHERSCAN_API_KEY) -vvvv
+
+grant-signing-role-eth-sepolia:
+	@forge script script/GrantSigningRole.s.sol:GrantSigningRole --rpc-url $(SEPOLIA_RPC_URL) --account sepolia-acc --broadcast --verify --etherscan-api-key $(ETHERSCAN_API_KEY) -vvvv
+
+propose-transaction-eth-sepolia:
+	@forge script script/Interact.s.sol:ProposeTransactionScript --rpc-url $(SEPOLIA_RPC_URL) --account sepolia-acc --broadcast --verify --etherscan-api-key $(ETHERSCAN_API_KEY) -vvvv
+
+confirm-transaction-eth-sepolia-first-account:
+	@forge script script/Interact.s.sol:ConfirmTransactionScript --rpc-url $(SEPOLIA_RPC_URL) --account sepolia-acc --broadcast --verify --etherscan-api-key $(ETHERSCAN_API_KEY) -vvvv
+
+confirm-transaction-eth-sepolia-second-account:
+	@forge script script/Interact.s.sol:ConfirmTransactionScript --rpc-url $(SEPOLIA_RPC_URL) --account second-sepolia --broadcast --verify --etherscan-api-key $(ETHERSCAN_API_KEY) -vvvv
+
+confirm-transaction-eth-sepolia-third-account:
+	@forge script script/Interact.s.sol:ConfirmTransactionScript --rpc-url $(SEPOLIA_RPC_URL) --account third-sepolia --broadcast --verify --etherscan-api-key $(ETHERSCAN_API_KEY) -vvvv
+
+execute-transaction-eth-sepolia:
+	@forge script script/Interact.s.sol:ExecuteTransactionScript --rpc-url $(SEPOLIA_RPC_URL) --account sepolia-acc --broadcast --verify --etherscan-api-key $(ETHERSCAN_API_KEY) -vvvv
