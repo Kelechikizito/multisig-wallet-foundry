@@ -18,9 +18,13 @@ A live 'unverified' contract address with Ethereum Sepolia testnet is available 
     - [Ownable](#ownable)
     - [AccessControl](#accesscontrol)
     - [ReentrancyGuard](#reentrancyguard)
-  - [Transaction Flows](#transaction-flows)
-  - [Deploying](#deploying)
-    - [LINK Token Funding](#link-token-funding)
+  - [Flowchart](#flowchart)
+  - [Deployment and Interaction](#deployment-and-interaction)
+  - [Testing](#testing)
+    - [Unit Tests](#unit-tests)
+      - [Unit test note](#unit-test-note)
+    - [Other Tests](#other-tests)
+  - [Testnet Deployments](#testnet-deployments)
 
 ## Overview
 
@@ -72,39 +76,83 @@ ReentrancyGuard prevents recursive call attacks by locking functions during exec
 
 The `nonReentrant` modifier is applied to all external mutable functions, including `grantSigningRole`, `revokeSigningRole`, `proposeTransaction`, `confirmTransaction`, `revokeConfirmation`, and `executeTransaction`, ensuring safe handling of ETH transfers and state updates without reentrancy risks.
 
-## Transaction Flows
+## Flowchart
 
-## Deploying
+This diagram shows a (rough) high-level overview of the entire process of the MultisigTimelock.
 
-The `MultiSigTimelock` (`DeployMultiSigTimelock`) should be deployed first. This script will also deploy the `ParentRebalancer`, and YieldCoin `Share` and `SharePool` contracts, as well as call the necessary functions to make the pool permissionless and integrate it with CCIP. It also grants mint and burn roles for YieldCoin to the `ParentPeer` and CCIP pool, as well as setting storage in `ParentRebalancer`.
+![FlowChart](./diagrams/image2.png)
 
-```
-forge script script/DeployMultiSigTimelock.s.sol:DeployMultiSigTimelock --broadcast --account <YOUR_FOUNDRY_KEYSTORE> --rpc-url <PARENT_CHAIN_RPC_URL> -vvvv
-```
+## Deployment and Interaction
 
-The Chainlink Automation forwarder address should be set in `ParentRebalancer::setForwarder()` and the Chainlink Automation upkeep address should be set in `ParentCLF::setUpkeepAddress()`.
-
-The `ParentCLF`, `Share`, and `SharePool` addresses returned from running that script should be added to `NetworkConfig.peers` for both the Parent chain and any child chains.
-
-Next deploy the `ChildPeer` and its YieldCoin `Share` and `SharePool` contracts. This will also perform the necessary actions to enable permissionless CCIP pool functionality and grant appropriate mint and burn roles for `YieldCoin`. This script should be run for every child chain.
+The `MultiSigTimelock` contract should be deployed first on the desired network (e.g., Sepolia). This script deploys the contract, setting the deployer as the initial owner and first signer with the signing role.
 
 ```
-forge script script/deploy/DeployChild.s.sol --broadcast --account <YOUR_FOUNDRY_KEYSTORE> --rpc-url <CHILD_CHAIN_RPC_URL>
+forge script script/DeployMultiSigTimelock.s.sol:DeployMultiSigTimelock --broadcast --account <YOUR_FOUNDRY_KEYSTORE> --rpc-url <CHAIN_RPC_URL> --verify --etherscan-api-key <YOUR_ETHERSCAN_API_KEY> -vvvv
 ```
 
-For every deployed Child, take the `ChildPeer`, `Share`, and `SharePool` addresses and add them to the `NetworkConfig.peer` for all applicable chains, including the Parent.
-
-Finally run the [`SetCrosschain`](https://github.com/contractlevel/yield/blob/main/script/interactions/SetCrosschain.s.sol) script for every chain. This will set the allowed chain selectors and peers for each chain, as well as enable the CCIP pools to work with each other.
+After deployment, grant signing roles to additional accounts (up to a maximum of 5 total signers). This script grants the signing role to a specified account, enabling it to confirm and execute transactions. Repeat as needed for each additional signer.
 
 ```
-forge script script/interactions/SetCrosschain.s.sol --broadcast --account <YOUR_FOUNDRY_KEYSTORE> --rpc-url <CHAIN_RPC_URL>
+forge script script/GrantSigningRole.s.sol:GrantSigningRole --broadcast --account <YOUR_FOUNDRY_KEYSTORE> --rpc-url <CHAIN_RPC_URL> --verify --etherscan-api-key <YOUR_ETHERSCAN_API_KEY> -vvvv
 ```
 
-### LINK Token Funding
+To interact with the contract, first propose a transaction. This script proposes a transaction to send ETH to a recipient, with optional data for contract calls. It uses the most recently deployed `MultiSigTimelock` and requires the owner's account.
 
-For the Contract Level Yield infrastructure to function, LINK is required for the following:
+```
+forge script script/Interact.s.sol:ProposeTransactionScript --broadcast --account <YOUR_FOUNDRY_KEYSTORE> --rpc-url <CHAIN_RPC_URL> --verify --etherscan-api-key <YOUR_ETHERSCAN_API_KEY> -vvvv
+```
 
-- Time-based Automation subscription on Parent chain
-- Log-trigger Automation subscription on Parent chain
-- Chainlink Functions subscription on Parent chain
-- Every `YieldPeer` on every chain for CCIP txs
+Next, confirm the proposed transaction with at least three signers (the minimum required). This script confirms the transaction using the stored transaction ID. Run it separately for each confirming account.
+
+```
+forge script script/Interact.s.sol:ConfirmTransactionScript --broadcast --account <YOUR_FOUNDRY_KEYSTORE> --rpc-url <CHAIN_RPC_URL> --verify --etherscan-api-key <YOUR_ETHERSCAN_API_KEY> -vvvv
+```
+
+Finally, execute the transaction once sufficient confirmations are obtained and any timelock has expired (based on transaction value). This script executes the transaction, transferring ETH or calling the specified data.
+
+```
+forge script script/Interact.s.sol:ExecuteTransactionScript --broadcast --account <YOUR_FOUNDRY_KEYSTORE> --rpc-url <CHAIN_RPC_URL> --verify --etherscan-api-key <YOUR_ETHERSCAN_API_KEY> -vvvv
+```
+
+## Testing
+
+This project was built with [Foundry](https://getfoundry.sh/introduction/installation/). To run the tests, Foundry and the project's dependencies need to be installed.
+
+```
+foundryup
+forge install
+```
+
+### Unit Tests
+
+The unit tests for the MultiSigTimelock contract are written using Foundry's testing framework (`forge-std/Test.sol`). They cover core functionality including signing role management (grant/revoke), transaction lifecycle (propose, confirm, revoke, execute), timelock delays based on transaction value, receive function for ETH deposits, getter functions, and integration with deployment/interaction scripts. Tests utilize Foundry cheats like `vm.prank` for simulating different signers, `vm.deal` for funding accounts/contracts, and `vm.expectRevert` for assertion of error conditions. No mainnet forking is required, as all tests run in a local simulated environment.
+
+The tests deploy fresh instances of `MultiSigTimelock` in `setUp()` and use helper contracts like `EthRejector` (for failed executions) and `TestTimelockDelay` (for isolated timelock logic verification). Script tests simulate real-world interactions by instantiating script contracts (e.g., `DeployMultiSigTimelock`, `GrantSigningRole`, `ProposeTransactionScript`) and calling their methods, ensuring deployment and transaction flows work end-to-end.
+
+#### Unit test note
+
+To run tests involving scripts (e.g., `testProposeTransactionScript`, `testConfirmTransactionScript`), which persist and retrieve `txnId` via file I/O using `vm.writeJson` and `vm.readFile`, you must enable filesystem permissions in `foundry.toml`:
+
+```
+[profile.default]
+fs_permissions = [{ access = "read-write", path = "./" }]
+```
+
+This allows safe access to files like `txnId.json` during testing. Without this, file-related operations will revert.
+
+The unit tests for the MultiSigTimelock contract can be run with:
+
+```
+forge test --match-contract MultiSigTimeLockTest
+```
+
+### Other Tests
+
+For the full Foundry test suite (), run:
+
+```
+forge test
+```
+
+## Testnet Deployments
+
