@@ -31,6 +31,7 @@ A live 'unverified' contract address with Ethereum Sepolia testnet is available 
     - [Propose Transaction](#propose-transaction)
     - [Confirm Transaction](#confirm-transaction)
     - [Execute Transaction](#execute-transaction)
+  - [Future Developments](#future-developments)
   - [Acknowledgement](#acknowledgement)
 
 ## Overview
@@ -199,6 +200,12 @@ confirmation by signer 0x5D4AD28BD191107E582E56E47D7407BD5F111D8B for txId 0: (h
 
 execute txId 0 (sending 0.005 ETH to 0x93923B42Ff4BDF533634Ea71BF626C90286D27A0): (https://sepolia.etherscan.io/tx/0xf06fa19b1d8ed3e3ca82630483f69884b0207d8955e8cdb57724c292b44e5321)
 
+## Future Developments
+
+- test suite needs improving(additional tests for scripts to get test coverage to 100%).
+- more testnet chains deployment.
+- using signature-based signatures, replacing the role-based model.
+
 ## Acknowledgement
 
-The idea for this project was inspired by the [Concero V2 Whitepaper, Section 7.1](https://concero.io/v2_whitepaper.pdf).
+The idea for this project was inspired by Claude Project Ideas.
