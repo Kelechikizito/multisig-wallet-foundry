@@ -25,6 +25,13 @@ A live 'unverified' contract address with Ethereum Sepolia testnet is available 
       - [Unit test note](#unit-test-note)
     - [Other Tests](#other-tests)
   - [Testnet Deployments](#testnet-deployments)
+    - [Eth Sepolia](#eth-sepolia)
+  - [Testnet Transactions](#testnet-transactions)
+    - [Grant Signing Roles](#grant-signing-roles)
+    - [Propose Transaction](#propose-transaction)
+    - [Confirm Transaction](#confirm-transaction)
+    - [Execute Transaction](#execute-transaction)
+  - [Acknowledgement](#acknowledgement)
 
 ## Overview
 
@@ -156,3 +163,42 @@ forge test
 
 ## Testnet Deployments
 
+The MultiSigTimelock contract has been deployed on the Ethereum Sepolia testnet to verify its role-based multi-signature and timelock functionalities in a realistic blockchain environment. This allows for thorough testing of transaction proposals, confirmations, revocations, and executions under varying value-based delays (e.g., no delay for <1 ETH, up to 7 days for ≥100 ETH) without risking real assets.
+ 
+No mock contracts were necessary, as the implementation relies on standard OpenZeppelin libraries for ownership, access control, and security.
+
+### Eth Sepolia
+
+MultiSigTimelock: https://sepolia.etherscan.io/address/0x34da08fbaed3814e8c71691641ef0ad4fe0b7fde#code
+
+## Testnet Transactions
+
+### Grant Signing Roles
+
+grant to signer 0x93923B42Ff4BDF533634Ea71BF626C90286D27A0: (https://sepolia.etherscan.io/tx/0x5af43371ceaaacb49d8c40524ae3c298d8126c60c9c9a74a6b2b2eda776ccebd)
+
+grant to signer 0x5D4AD28BD191107E582E56E47D7407BD5F111D8B: (https://sepolia.etherscan.io/tx/0x8cf0445cd885eb37ac1c7996639d033a003bb95d9f7014903478f00ef8990871)
+
+grant to signer 0x86F44Aa771F0Ad42A037Eff70C859Bb1B86C188A: (https://sepolia.etherscan.io/tx/0x8f9bd3d606b213343d79e48ce6594ddc9f19d66caf1b719b1c08ed3281ac9da8)
+
+grant to signer 0x5375Bb27ABeC8D0F69D035C58306936aA9991182: (https://sepolia.etherscan.io/tx/0x4eb51e6bc205b2da5bebac10e8aea6433f159fb45ef1d4b78d86110e7ecbaa59)
+
+### Propose Transaction
+
+propose tx to send 0.005 ETH to 0x93923B42Ff4BDF533634Ea71BF626C90286D27A0 (txId 0): (https://sepolia.etherscan.io/tx/0xd9c87d54558ee6336bcde6e390fa4c6ece903c96a33f045d8002740e64473850)
+
+### Confirm Transaction
+
+confirmation by owner for txId 0: (https://sepolia.etherscan.io/tx/0x0d7296e393a36aad7ae1ba42bf338bf8efa24524bb2a008536aa4ca7de2c059a)
+
+confirmation by signer 0x93923B42Ff4BDF533634Ea71BF626C90286D27A0 for txId 0: (https://sepolia.etherscan.io/tx/0x93adf4a3c3b52bab81095fc8ff2681db700d51c8e48b6551cecedf86fbb00b09)
+
+confirmation by signer 0x5D4AD28BD191107E582E56E47D7407BD5F111D8B for txId 0: (https://sepolia.etherscan.io/tx/0xc1580964a0e40b19a819c4364f6152430435b8e55038a7599ad24ee4bed1f298)
+
+### Execute Transaction
+
+execute txId 0 (sending 0.005 ETH to 0x93923B42Ff4BDF533634Ea71BF626C90286D27A0): (https://sepolia.etherscan.io/tx/0xf06fa19b1d8ed3e3ca82630483f69884b0207d8955e8cdb57724c292b44e5321)
+
+## Acknowledgement
+
+The idea for this project was inspired by the [Concero V2 Whitepaper, Section 7.1](https://concero.io/v2_whitepaper.pdf).
