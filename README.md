@@ -202,7 +202,7 @@ execute txId 0 (sending 0.005 ETH to 0x93923B42Ff4BDF533634Ea71BF626C90286D27A0)
 
 ## Future Developments
 
-- test suite needs improving(additional tests for scripts to get test coverage to 100%).
+- test suite needs improving(fuzz tests and additional tests for scripts to get test coverage to 100%).
 - more testnet chains deployment.
 - using signature-based signatures, replacing the role-based model.
 
