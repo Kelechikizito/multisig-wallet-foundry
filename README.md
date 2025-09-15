@@ -208,4 +208,4 @@ execute txId 0 (sending 0.005 ETH to 0x93923B42Ff4BDF533634Ea71BF626C90286D27A0)
 
 ## Acknowledgement
 
-The idea for this project was inspired by Claude Project Ideas.
+The idea for this project was inspired by Claude.
