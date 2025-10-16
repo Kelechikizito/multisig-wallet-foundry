@@ -381,7 +381,7 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
             revert MultiSigTimelock__ExecutionFailed();
         }
 
-        // 5. Emit event
+        // 5. Emit eventt
         emit TransactionExecuted(txnId, txn.to, txn.value);
     }
 
