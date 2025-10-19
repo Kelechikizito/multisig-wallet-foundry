@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { type ReactNode } from "react";
 import Header from "@/components/Header";
 import { Providers } from "./providers";
+// Remove the import for ThemeProvider here, since it's already in Providers
 
 export const metadata: Metadata = {
   title: "MultiSignature-timelock Wallet",
@@ -14,9 +15,9 @@ export default function RootLayout(props: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>
-        <link rel="icon" href="/T-Sender.svg" sizes="any" />
+        <link rel="icon" href="k" sizes="any" />
       </head>
-      <body className="bg-zinc-50">
+      <body className="">
         <Providers>
           <Header />
           {props.children}

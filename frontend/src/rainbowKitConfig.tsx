@@ -16,7 +16,7 @@ import {
 // The configuration includes the app name, WalletConnect project ID, supported chains, and server-side rendering (SSR) setting.
 
 export default getDefaultConfig({
-  appName: "TSender",
+  appName: "MultiSignature-timelock Wallet",
   projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!,
   chains: [sepolia],
   ssr: false, // Since this is a static site; client-side rendering, this is disabled
