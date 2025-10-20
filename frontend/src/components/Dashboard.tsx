@@ -13,15 +13,28 @@ import {
 // import { useAccount, useContractWrite, useWaitForTransaction } from "wagmi";
 import { parseEther } from "viem";
 import ProposeTransactionModal from "./ui/ProposeTransactionModal";
-import Header from "./Header";
 import StatsCard from "./ui/StatsCard";
 import TransactionCard from "./ui/TransactionCard";
+import {
+  useChainId,
+  useBalance,
+  useConfig,
+  useAccount
+} from "wagmi";
+import { readContract } from '@wagmi/core';
+import { chainsToMultisigTimelock, multisigTimelockAbi } from "@/constants";
 
 // Main Dashboard
 const Dashboard = () => {
   const [activeTab, setActiveTab] = useState("pending");
-  const [showPropose, setShowPropose] = useState(false);
+  // ✅ ONLY ONE state variable for the modal
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const config = useConfig();
+  const chainId = useChainId();
+  const { isConnected } = useAccount();
+
+  // The Sepolia Contract Address
+  const multisigTimelockSepoliaAddress = chainsToMultisigTimelock[chainId]["multisigtimelock"];
 
   // Mock data - replace with actual contract data
   const transactions = [
@@ -51,8 +64,36 @@ const Dashboard = () => {
     },
   ];
 
+  // Reading the contract eth balance
+  const {data: walletBalance} = useBalance({
+    address: multisigTimelockSepoliaAddress as `0x${string}`,
+  })
+
+  // Function to handle the transaction proposal
+  const handlePropose = async (to: string, amount: string, data: string) => {
+    if (isConnected) {
+      alert("Please connect your wallet first");
+      return;
+    }
+
+    try {
+      // Convert ETH amount to wei
+      const valueInWei = parseEther(amount);
+
+      // Call contract function
+      proposeTransaction({
+        args: [to as `0x${string}`, valueInWei, data as `0x${string}`],
+      });
+
+      console.log("Transaction proposed successfully!");
+    } catch (error) {
+      console.error("Error proposing transaction:", error);
+      alert("Failed to propose transaction. Check console for details.");
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 bg-gray-50 dark:bg-gray-900 min-h-screen">
+    <div className="bg-gray-50 dark:bg-gray-900 min-h-screen">
       <main className="max-w-7xl mx-auto px-4 md:px-8 py-8">
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -77,7 +118,7 @@ const Dashboard = () => {
           <StatsCard
             icon={Send}
             label="Wallet Balance"
-            value="12.5 ETH"
+            value={walletBalance?.formatted ? `${walletBalance.formatted} ETH` : 'Loading...'}
             color="purple"
           />
         </div>
@@ -85,13 +126,18 @@ const Dashboard = () => {
         {/* Action Buttons */}
         <div className="flex gap-4 mb-6">
           <button
-            onClick={() => setShowPropose(true)}
-            className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors shadow-sm"
+            onClick={() => setIsModalOpen(true)}
+            disabled={!isConnected}
+            className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-colors shadow-sm ${
+              isConnected 
+                ? "bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+                : "bg-gray-300 text-gray-500 cursor-not-allowed"
+            }`}
           >
             <Send className="h-5 w-5" />
             Propose Transaction
           </button>
-          <button className="flex items-center gap-2 px-6 py-3 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-lg font-medium transition-colors shadow-sm">
+          <button className="flex items-center gap-2 px-6 py-3 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-lg font-medium transition-colors shadow-sm cursor-not-allowed" disabled>
             <Users className="h-5 w-5" />
             Manage Signers
           </button>
@@ -147,11 +193,11 @@ const Dashboard = () => {
         )}
       </main>
 
-       {/* <ProposeTransactionModal
+      <ProposeTransactionModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onPropose={handlePropose}
-      /> */}
+      />
     </div>
   );
 };

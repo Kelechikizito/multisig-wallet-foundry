@@ -5,7 +5,7 @@ interface ContractsConfig {
   };
 }
 
-export const chainsToTSender: ContractsConfig = {
+export const chainsToMultisigTimelock: ContractsConfig = {
   11155111: {
     multisigtimelock: "0x34da08fbaed3814e8c71691641ef0ad4fe0b7fde",
     no_check: null,
