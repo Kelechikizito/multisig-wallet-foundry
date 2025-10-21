@@ -312,12 +312,7 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
     function _proposeTransaction(address to, uint256 value, bytes memory data) internal returns (uint256) {
         uint256 transactionId = s_transactionCount;
         s_transactions[transactionId] = Transaction({
-            to: to,
-            value: value,
-            data: data,
-            confirmations: 0,
-            proposedAt: block.timestamp,
-            executed: false
+            to: to, value: value, data: data, confirmations: 0, proposedAt: block.timestamp, executed: false
         });
 
         s_transactionCount++;
@@ -501,5 +496,13 @@ contract MultiSigTimelock is Ownable, AccessControl, ReentrancyGuard {
      */
     function getTransaction(uint256 transactionId) external view returns (Transaction memory) {
         return s_transactions[transactionId];
+    }
+
+    /**
+     * @dev A getter function to return the total number of proposed transactions.
+     * @return The total number of proposed transactions
+     */
+    function getTransactionCount() external view returns (uint256) {
+        return s_transactionCount;
     }
 }

@@ -7,7 +7,7 @@ interface ContractsConfig {
 
 export const chainsToMultisigTimelock: ContractsConfig = {
   11155111: {
-    multisigtimelock: "0x34da08fbaed3814e8c71691641ef0ad4fe0b7fde",
+    multisigtimelock: "0xD1b5cd33baE15F16CeB28C378c77885E4563E024",
     no_check: null,
   },
 };
@@ -125,6 +125,13 @@ export const multisigTimelockAbi = [
         ],
       },
     ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getTransactionCount",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
     stateMutability: "view",
   },
   {

@@ -33,12 +33,12 @@ export default function Header() {
             Deployed on Sepolia
           </p>
           <a
-            href="https://sepolia.etherscan.io/address/0x34da08fbaed3814e8c71691641ef0ad4fe0b7fde"
+            href="https://sepolia.etherscan.io/address/0xd1b5cd33bae15f16ceb28c378c77885e4563e024"
             target="_blank"
             rel="noopener noreferrer"
             className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-mono hover:underline transition-colors"
           >
-            0x34da...7fde
+            0xd1b5...e024
           </a>
         </div>
 

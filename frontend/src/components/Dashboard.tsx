@@ -1,16 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import {
-  Shield,
-  Clock,
-  Users,
-  Send,
-  CheckCircle,
-  XCircle,
-  AlertCircle,
-} from "lucide-react";
-// import { useAccount, useContractWrite, useWaitForTransaction } from "wagmi";
+import React, { useEffect, useState } from "react";
+import { Shield, Clock, Users, Send, CheckCircle } from "lucide-react";
 import { parseEther } from "viem";
 import ProposeTransactionModal from "./ui/ProposeTransactionModal";
 import StatsCard from "./ui/StatsCard";
@@ -19,76 +10,220 @@ import {
   useChainId,
   useBalance,
   useConfig,
-  useAccount
+  useAccount,
+  usePublicClient,
 } from "wagmi";
-import { readContract } from '@wagmi/core';
+import {
+  readContract,
+  writeContract,
+  waitForTransactionReceipt,
+} from "@wagmi/core";
 import { chainsToMultisigTimelock, multisigTimelockAbi } from "@/constants";
+import { useTransactions } from "@/hooks/useTransactions";
 
-// Main Dashboard
-const Dashboard = () => {
-  const [activeTab, setActiveTab] = useState("pending");
-  // ✅ ONLY ONE state variable for the modal
+type UiTx = {
+  id: number;
+  to: string;
+  amount: number;
+  confirmations: number;
+  executed: boolean;
+  timelock?: number | undefined;
+};
+
+const Dashboard: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<"pending" | "executed">("pending");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isWriting, setIsWriting] = useState(false);
+
+  // ownership state (to enforce onlyOwner UI)
+  const [contractOwner, setContractOwner] = useState<string | null>(null);
+  const [ownerLoading, setOwnerLoading] = useState(false);
+
+  // Wagmi hooks
   const config = useConfig();
   const chainId = useChainId();
-  const { isConnected } = useAccount();
+  const { address: connectedAddress, isConnected } = useAccount();
+  const publicClient = usePublicClient();
 
-  // The Sepolia Contract Address
-  const multisigTimelockSepoliaAddress = chainsToMultisigTimelock[chainId]["multisigtimelock"];
+  const multisigAddress = chainsToMultisigTimelock[chainId]?.multisigtimelock;
 
-  // Mock data - replace with actual contract data
-  const transactions = [
-    {
-      id: 1,
-      to: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
-      amount: 0.5,
-      confirmations: 2,
-      executed: false,
-      timelock: null,
-    },
-    {
-      id: 2,
-      to: "0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199",
-      amount: 5,
-      confirmations: 3,
-      executed: false,
-      timelock: Date.now() + 86400000,
-    },
-    {
-      id: 3,
-      to: "0xdD2FD4581271e230360230F9337D5c0430Bf44C0",
-      amount: 50,
-      confirmations: 1,
-      executed: false,
-      timelock: Date.now() + 172800000,
-    },
-  ];
+  const { data: walletBalance } = useBalance({
+    address: multisigAddress as `0x${string}`,
+  });
 
-  // Reading the contract eth balance
-  const {data: walletBalance} = useBalance({
-    address: multisigTimelockSepoliaAddress as `0x${string}`,
-  })
+  // quick derived
+  const isOwner =
+    isConnected &&
+    contractOwner &&
+    connectedAddress?.toLowerCase() === contractOwner.toLowerCase();
 
-  // Function to handle the transaction proposal
+  const {
+    transactions,
+    loading: loadingTxs,
+    refetch: refetchTransactions,
+  } = useTransactions(config, multisigAddress, publicClient);
+
+  // READ owner() from contract
+  useEffect(() => {
+    const loadOwner = async () => {
+      if (!config || !multisigAddress || !publicClient) return;
+      try {
+        setOwnerLoading(true);
+        const owner = (await readContract(config, {
+          abi: multisigTimelockAbi,
+          address: multisigAddress as `0x${string}`,
+          functionName: "owner",
+        })) as string;
+        setContractOwner(owner);
+      } catch (err) {
+        console.error("Failed to read contract owner:", err);
+        setContractOwner(null);
+      } finally {
+        setOwnerLoading(false);
+      }
+    };
+
+    loadOwner();
+  }, [config, multisigAddress, publicClient]);
+
+  // ======== HANDLERS ========
+  // PROPOSE - only owner address can successfully call on-chain
   const handlePropose = async (to: string, amount: string, data: string) => {
-    if (isConnected) {
-      alert("Please connect your wallet first");
+    if (!isConnected) {
+      alert("Please connect your wallet");
+      return;
+    }
+    if (!isOwner) {
+      alert("Only the contract owner may propose transactions");
+      return;
+    }
+    if (!multisigAddress) {
+      alert("Contract address not configured for this chain");
       return;
     }
 
     try {
-      // Convert ETH amount to wei
+      setIsWriting(true);
       const valueInWei = parseEther(amount);
 
-      // Call contract function
-      proposeTransaction({
-        args: [to as `0x${string}`, valueInWei, data as `0x${string}`],
+      const tx = await writeContract(config, {
+        abi: multisigTimelockAbi,
+        address: multisigAddress as `0x${string}`,
+        functionName: "proposeTransaction",
+        args: [
+          to as `0x${string}`,
+          valueInWei,
+          data && data.length > 0 ? (data as `0x${string}`) : "0x",
+        ],
       });
 
-      console.log("Transaction proposed successfully!");
-    } catch (error) {
-      console.error("Error proposing transaction:", error);
-      alert("Failed to propose transaction. Check console for details.");
+      console.log("Propose tx submitted:", tx);
+
+      // 🕒 Wait for it to be mined before fetching
+      const receipt = await waitForTransactionReceipt(config, { hash: tx });
+      console.log("✅ Tx confirmed in block:", receipt.blockNumber);
+
+      await refetchTransactions();
+      alert("Proposal confirmed and transaction list updated!");
+    } catch (err: any) {
+      console.error("Propose error:", err);
+      alert(
+        err?.message
+          ? `Failed to propose transaction: ${err.message}`
+          : "Propose failed"
+      );
+    } finally {
+      setIsWriting(false);
+      setIsModalOpen(false);
+    }
+  };
+
+  // CONFIRM (only signers who have SIGNING_ROLE can succeed)
+  const handleConfirm = async (txId: number) => {
+    if (!isConnected) {
+      alert("Please connect your wallet");
+      return;
+    }
+    if (!multisigAddress) {
+      alert("Contract address not configured for this chain");
+      return;
+    }
+
+    try {
+      setIsWriting(true);
+      const tx = await writeContract(config, {
+        abi: multisigTimelockAbi,
+        address: multisigAddress as `0x${string}`,
+        functionName: "confirmTransaction",
+        args: [BigInt(txId)],
+      });
+      console.log("Confirm tx submitted:", tx);
+      alert("Confirmation submitted. Check wallet to sign.");
+    } catch (err: any) {
+      console.error("Confirm error:", err);
+      alert(err?.message ?? "Confirm failed");
+    } finally {
+      setIsWriting(false);
+    }
+  };
+
+  // REVOKE
+  const handleRevoke = async (txId: number) => {
+    if (!isConnected) {
+      alert("Please connect your wallet");
+      return;
+    }
+    if (!multisigAddress) {
+      alert("Contract address not configured for this chain");
+      return;
+    }
+
+    try {
+      setIsWriting(true);
+      const tx = await writeContract({
+        ...config,
+        abi: multisigTimelockAbi,
+        address: multisigAddress as `0x${string}`,
+        functionName: "revokeConfirmation",
+        args: [BigInt(txId)],
+      });
+      console.log("Revoke tx submitted:", tx);
+      alert("Revocation submitted. Check wallet to sign.");
+    } catch (err: any) {
+      console.error("Revoke error:", err);
+      alert(err?.message ?? "Revoke failed");
+    } finally {
+      setIsWriting(false);
+    }
+  };
+
+  // EXECUTE (only signers can execute; timelock & confirmations enforced on-chain)
+  const handleExecute = async (txId: number) => {
+    if (!isConnected) {
+      alert("Please connect your wallet");
+      return;
+    }
+    if (!multisigAddress) {
+      alert("Contract address not configured for this chain");
+      return;
+    }
+
+    try {
+      setIsWriting(true);
+      const tx = await writeContract({
+        ...config,
+        abi: multisigTimelockAbi,
+        address: multisigAddress as `0x${string}`,
+        functionName: "executeTransaction",
+        args: [BigInt(txId)],
+      });
+      console.log("Execute tx submitted:", tx);
+      alert("Execute transaction submitted. Check wallet to sign.");
+    } catch (err: any) {
+      console.error("Execute error:", err);
+      alert(err?.message ?? "Execute failed");
+    } finally {
+      setIsWriting(false);
     }
   };
 
@@ -112,32 +247,49 @@ const Dashboard = () => {
           <StatsCard
             icon={Clock}
             label="Pending Transactions"
-            value="3"
+            value={String(transactions.length)}
             color="orange"
           />
           <StatsCard
             icon={Send}
             label="Wallet Balance"
-            value={walletBalance?.formatted ? `${walletBalance.formatted} ETH` : 'Loading...'}
+            value={
+              walletBalance?.formatted
+                ? `${walletBalance.formatted} ETH`
+                : "Loading..."
+            }
             color="purple"
           />
         </div>
 
-        {/* Action Buttons */}
+        {/* Actions */}
         <div className="flex gap-4 mb-6">
           <button
             onClick={() => setIsModalOpen(true)}
-            disabled={!isConnected}
+            disabled={!isConnected || !isOwner || ownerLoading || isWriting}
             className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-colors shadow-sm ${
-              isConnected 
+              isConnected && isOwner && !isWriting
                 ? "bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
                 : "bg-gray-300 text-gray-500 cursor-not-allowed"
             }`}
+            title={
+              !isConnected
+                ? "Connect wallet"
+                : ownerLoading
+                ? "Checking owner..."
+                : !isOwner
+                ? "Only contract owner can propose"
+                : "Propose Transaction"
+            }
           >
-            <Send className="h-5 w-5" />
-            Propose Transaction
+            <Send className={`h-5 w-5 ${isWriting ? "animate-spin" : ""}`} />
+            {isWriting ? "Processing..." : "Propose Transaction"}
           </button>
-          <button className="flex items-center gap-2 px-6 py-3 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-lg font-medium transition-colors shadow-sm cursor-not-allowed" disabled>
+
+          <button
+            disabled
+            className="flex items-center gap-2 px-6 py-3 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-lg font-medium transition-colors shadow-sm cursor-not-allowed"
+          >
             <Users className="h-5 w-5" />
             Manage Signers
           </button>
@@ -167,28 +319,22 @@ const Dashboard = () => {
           </button>
         </div>
 
-        {/* Transactions Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {transactions.map((tx) => (
-            <TransactionCard
-              key={tx.id}
-              tx={tx}
-              onConfirm={(id) => console.log("Confirm", id)}
-              onRevoke={(id) => console.log("Revoke", id)}
-            />
-          ))}
-        </div>
-
-        {/* Empty State */}
-        {transactions.length === 0 && (
-          <div className="text-center py-12">
-            <Shield className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              No transactions yet
-            </h3>
-            <p className="text-gray-600">
-              Create your first transaction to get started
-            </p>
+        {loadingTxs ? (
+          <p className="text-gray-500">Loading transactions...</p>
+        ) : transactions.length === 0 ? (
+          <p className="text-gray-500">No transactions found.</p>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {transactions.map((tx) => (
+              <TransactionCard
+                key={tx.id}
+                tx={tx}
+                onConfirm={() => handleConfirm(tx.id)}
+                onRevoke={() => handleRevoke(tx.id)}
+                onExecute={() => handleExecute(tx.id)}
+                isLoading={isWriting}
+              />
+            ))}
           </div>
         )}
       </main>
