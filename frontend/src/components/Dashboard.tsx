@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Shield, Clock, Users, Send, CheckCircle } from "lucide-react";
 import { parseEther } from "viem";
 import ProposeTransactionModal from "./ui/ProposeTransactionModal";
+import ManageSignersModal from "./ui/ManageSignersModal";
 import StatsCard from "./ui/StatsCard";
 import TransactionCard from "./ui/TransactionCard";
 import {
@@ -20,6 +21,7 @@ import {
 } from "@wagmi/core";
 import { chainsToMultisigTimelock, multisigTimelockAbi } from "@/constants";
 import { useTransactions } from "@/hooks/useTransactions";
+import { useSigners } from "@/hooks/useSigners";
 
 type UiTx = {
   id: number;
@@ -34,8 +36,9 @@ const Dashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"pending" | "executed">("pending");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isWriting, setIsWriting] = useState(false);
+  const [showSignersModal, setShowSignersModal] = useState(false);
 
-  // ownership state (to enforce onlyOwner UI)
+  // ownership state
   const [contractOwner, setContractOwner] = useState<string | null>(null);
   const [ownerLoading, setOwnerLoading] = useState(false);
 
@@ -51,7 +54,6 @@ const Dashboard: React.FC = () => {
     address: multisigAddress as `0x${string}`,
   });
 
-  // quick derived
   const isOwner =
     isConnected &&
     contractOwner &&
@@ -62,6 +64,11 @@ const Dashboard: React.FC = () => {
     loading: loadingTxs,
     refetch: refetchTransactions,
   } = useTransactions(config, multisigAddress, publicClient);
+  const { signers, loading: signersLoading } = useSigners(
+    config,
+    multisigAddress,
+    publicClient
+  );
 
   // READ owner() from contract
   useEffect(() => {
@@ -82,12 +89,10 @@ const Dashboard: React.FC = () => {
         setOwnerLoading(false);
       }
     };
-
     loadOwner();
   }, [config, multisigAddress, publicClient]);
 
   // ======== HANDLERS ========
-  // PROPOSE - only owner address can successfully call on-chain
   const handlePropose = async (to: string, amount: string, data: string) => {
     if (!isConnected) {
       alert("Please connect your wallet");
@@ -118,27 +123,20 @@ const Dashboard: React.FC = () => {
       });
 
       console.log("Propose tx submitted:", tx);
-
-      // 🕒 Wait for it to be mined before fetching
       const receipt = await waitForTransactionReceipt(config, { hash: tx });
-      console.log("✅ Tx confirmed in block:", receipt.blockNumber);
+      console.log("✅ Tx confirmed:", receipt);
 
       await refetchTransactions();
       alert("Proposal confirmed and transaction list updated!");
     } catch (err: any) {
       console.error("Propose error:", err);
-      alert(
-        err?.message
-          ? `Failed to propose transaction: ${err.message}`
-          : "Propose failed"
-      );
+      alert(err?.message ?? "Propose failed");
     } finally {
       setIsWriting(false);
       setIsModalOpen(false);
     }
   };
 
-  // CONFIRM (only signers who have SIGNING_ROLE can succeed)
   const handleConfirm = async (txId: number) => {
     if (!isConnected) {
       alert("Please connect your wallet");
@@ -151,14 +149,19 @@ const Dashboard: React.FC = () => {
 
     try {
       setIsWriting(true);
-      const tx = await writeContract(config, {
+      const txHash = await writeContract(config, {
         abi: multisigTimelockAbi,
         address: multisigAddress as `0x${string}`,
         functionName: "confirmTransaction",
         args: [BigInt(txId)],
       });
-      console.log("Confirm tx submitted:", tx);
-      alert("Confirmation submitted. Check wallet to sign.");
+      console.log("Confirm tx submitted:", txHash);
+
+      const receipt = await waitForTransactionReceipt(config, { hash: txHash });
+      console.log("✅ Confirmed:", receipt);
+
+      await refetchTransactions();
+      alert("Transaction successfully confirmed!");
     } catch (err: any) {
       console.error("Confirm error:", err);
       alert(err?.message ?? "Confirm failed");
@@ -167,7 +170,6 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // REVOKE
   const handleRevoke = async (txId: number) => {
     if (!isConnected) {
       alert("Please connect your wallet");
@@ -180,15 +182,19 @@ const Dashboard: React.FC = () => {
 
     try {
       setIsWriting(true);
-      const tx = await writeContract({
-        ...config,
+      const txHash = await writeContract(config, {
         abi: multisigTimelockAbi,
         address: multisigAddress as `0x${string}`,
         functionName: "revokeConfirmation",
         args: [BigInt(txId)],
       });
-      console.log("Revoke tx submitted:", tx);
-      alert("Revocation submitted. Check wallet to sign.");
+      console.log("Revoke tx submitted:", txHash);
+
+      const receipt = await waitForTransactionReceipt(config, { hash: txHash });
+      console.log("✅ Revoked:", receipt);
+
+      await refetchTransactions();
+      alert("Confirmation revoked successfully!");
     } catch (err: any) {
       console.error("Revoke error:", err);
       alert(err?.message ?? "Revoke failed");
@@ -197,7 +203,6 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // EXECUTE (only signers can execute; timelock & confirmations enforced on-chain)
   const handleExecute = async (txId: number) => {
     if (!isConnected) {
       alert("Please connect your wallet");
@@ -210,15 +215,21 @@ const Dashboard: React.FC = () => {
 
     try {
       setIsWriting(true);
-      const tx = await writeContract({
-        ...config,
+      const txHash = await writeContract(config, {
         abi: multisigTimelockAbi,
         address: multisigAddress as `0x${string}`,
         functionName: "executeTransaction",
         args: [BigInt(txId)],
       });
-      console.log("Execute tx submitted:", tx);
-      alert("Execute transaction submitted. Check wallet to sign.");
+
+      console.log("Execute tx submitted:", txHash);
+
+      const receipt = await waitForTransactionReceipt(config, { hash: txHash });
+      console.log("✅ Execution mined:", receipt);
+
+      await refetchTransactions();
+      alert("Transaction executed successfully!");
+      setActiveTab("executed");
     } catch (err: any) {
       console.error("Execute error:", err);
       alert(err?.message ?? "Execute failed");
@@ -226,6 +237,13 @@ const Dashboard: React.FC = () => {
       setIsWriting(false);
     }
   };
+
+  const totalSigners = useMemo(() => signers?.length || 0, [signers]);
+
+  // === Filter transactions ===
+  const pendingTxs = transactions.filter((tx) => !tx.executed);
+  const executedTxs = transactions.filter((tx) => tx.executed);
+  const visibleTxs = activeTab === "pending" ? pendingTxs : executedTxs;
 
   return (
     <div className="bg-gray-50 dark:bg-gray-900 min-h-screen">
@@ -235,7 +253,7 @@ const Dashboard: React.FC = () => {
           <StatsCard
             icon={Shield}
             label="Total Signers"
-            value="5"
+            value={signersLoading ? "..." : totalSigners}
             color="blue"
           />
           <StatsCard
@@ -247,7 +265,7 @@ const Dashboard: React.FC = () => {
           <StatsCard
             icon={Clock}
             label="Pending Transactions"
-            value={String(transactions.length)}
+            value={String(pendingTxs.length)}
             color="orange"
           />
           <StatsCard
@@ -287,8 +305,9 @@ const Dashboard: React.FC = () => {
           </button>
 
           <button
-            disabled
-            className="flex items-center gap-2 px-6 py-3 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-lg font-medium transition-colors shadow-sm cursor-not-allowed"
+            onClick={() => setShowSignersModal(true)}
+            disabled={!isConnected || !isOwner || ownerLoading || isWriting}
+            className="flex items-center gap-2 px-6 py-3 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-lg font-medium transition-colors shadow-sm cursor-pointer"
           >
             <Users className="h-5 w-5" />
             Manage Signers
@@ -319,13 +338,18 @@ const Dashboard: React.FC = () => {
           </button>
         </div>
 
+        {/* Transactions */}
         {loadingTxs ? (
           <p className="text-gray-500">Loading transactions...</p>
-        ) : transactions.length === 0 ? (
-          <p className="text-gray-500">No transactions found.</p>
+        ) : visibleTxs.length === 0 ? (
+          <p className="text-gray-500">
+            {activeTab === "pending"
+              ? "No pending transactions."
+              : "No executed transactions yet."}
+          </p>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {transactions.map((tx) => (
+            {visibleTxs.map((tx) => (
               <TransactionCard
                 key={tx.id}
                 tx={tx}
@@ -343,6 +367,13 @@ const Dashboard: React.FC = () => {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onPropose={handlePropose}
+      />
+      <ManageSignersModal
+        open={showSignersModal}
+        onClose={() => setShowSignersModal(false)}
+        config={config}
+        multisigAddress={multisigAddress as `0x${string}`}
+        publicClient={publicClient}
       />
     </div>
   );

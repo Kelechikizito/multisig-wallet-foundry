@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { readContract } from "@wagmi/core";
 import { multisigTimelockAbi } from "@/constants";
-import type { Config, PublicClient } from "wagmi";
+import type { Config, usePublicClient } from "wagmi";
+import { PublicClient } from "viem";
 
 export type UiTx = {
   id: number;
@@ -14,7 +15,7 @@ export type UiTx = {
 
 export function useTransactions(
   config: Config | undefined,
-  multisigAddress: `0x${string}` | undefined,
+  multisigAddress: string | `0x${string}` | undefined,
   publicClient: PublicClient | undefined
 ) {
   const [transactions, setTransactions] = useState<UiTx[]>([]);
@@ -48,19 +49,25 @@ export function useTransactions(
 
       // 2️⃣ Fetch each transaction
       const txs: UiTx[] = [];
+
       for (let i = 0; i < count; i++) {
-        const txData = (await readContract(config, {
+        const txData = await readContract(config, {
           abi: multisigTimelockAbi,
           address: multisigAddress,
           functionName: "getTransaction",
           args: [BigInt(i)],
-        })) as [string, bigint, string, bigint, bigint, boolean];
+        });
 
-        const [to, value, _data, confirmations, proposedAt, executed] = txData;
+        console.log("📦 txData raw:", txData);
+
+        // If it’s an object (struct)
+        const { to, value, data, confirmations, proposedAt, executed } =
+          txData as any;
+
         txs.push({
           id: i,
           to,
-          amount: Number(value) / 1e18, // wei -> ETH
+          amount: Number(value) / 1e18,
           confirmations: Number(confirmations),
           executed,
           timelock: Number(proposedAt),

@@ -7,8 +7,6 @@ import {
   XCircle,
   AlertCircle,
 } from "lucide-react";
-
-// Transaction Card Component
 import React from "react";
 
 type Transaction = {
@@ -24,12 +22,15 @@ type TransactionCardProps = {
   tx: Transaction;
   onConfirm: (id: number) => void;
   onRevoke: (id: number) => void;
+  onExecute: (id: number) => void;
+  isLoading?: boolean;
 };
 
 export default function TransactionCard({
   tx,
   onConfirm,
   onRevoke,
+  onExecute,
 }: TransactionCardProps): JSX.Element {
   const getTimelockBadge = (amount: number) => {
     if (amount < 1)
@@ -45,7 +46,8 @@ export default function TransactionCard({
   const progress = (tx.confirmations / 3) * 100;
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+    <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow dark:bg-gray-800 text-gray-900 dark:text-white">
+      {/* Header */}
       <div className="flex justify-between items-start mb-4">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-2">
@@ -62,7 +64,9 @@ export default function TransactionCard({
           <p className="text-sm text-gray-600 mb-1">
             To: {tx.to.slice(0, 6)}...{tx.to.slice(-4)}
           </p>
-          <p className="text-lg font-bold text-gray-900 dark:text-white">{tx.amount} ETH</p>
+          <p className="text-lg font-bold text-gray-900 dark:text-white">
+            {tx.amount} ETH
+          </p>
         </div>
         <div
           className={`px-3 py-1 rounded-full text-xs font-medium ${
@@ -81,6 +85,7 @@ export default function TransactionCard({
         </div>
       </div>
 
+      {/* Progress */}
       <div className="mb-4">
         <div className="flex justify-between text-sm mb-2">
           <span className="text-gray-600">Confirmations</span>
@@ -91,11 +96,12 @@ export default function TransactionCard({
         <div className="w-full bg-gray-200 rounded-full h-2">
           <div
             className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-            style={{ width: `${progress}%` }}
+            style={{ width: `${Math.min(progress, 100)}%` }}
           />
         </div>
       </div>
 
+      {/* Timelock Info */}
       {tx.timelock && (
         <div className="flex items-center gap-2 mb-4 p-3 bg-orange-50 rounded-lg">
           <AlertCircle className="h-4 w-4 text-orange-600" />
@@ -105,9 +111,21 @@ export default function TransactionCard({
         </div>
       )}
 
-      <div className="flex gap-2">
-        {!tx.executed && tx.confirmations < 3 && (
-          <>
+      {/* Action Buttons */}
+      <div className="flex flex-col gap-2">
+        {/* Show execute when ready (≥3 confirmations) */}
+        {!tx.executed && tx.confirmations >= 3 && (
+          <button 
+          onClick={() => onExecute(tx.id)}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors">
+            <Send className="h-4 w-4" />
+            Execute Transaction
+          </button>
+        )}
+
+        {/* Always show confirm/revoke if not executed */}
+        {!tx.executed && (
+          <div className="flex gap-2">
             <button
               onClick={() => onConfirm(tx.id)}
               className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
@@ -122,13 +140,7 @@ export default function TransactionCard({
               <XCircle className="h-4 w-4" />
               Revoke
             </button>
-          </>
-        )}
-        {!tx.executed && tx.confirmations >= 3 && (
-          <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors">
-            <Send className="h-4 w-4" />
-            Execute Transaction
-          </button>
+          </div>
         )}
       </div>
     </div>
