@@ -102,12 +102,41 @@ export default function TransactionCard({
       </div>
 
       {/* Timelock Info */}
-      {tx.timelock && (
-        <div className="flex items-center gap-2 mb-4 p-3 bg-orange-50 rounded-lg">
-          <AlertCircle className="h-4 w-4 text-orange-600" />
-          <p className="text-sm text-orange-800">
-            Unlocks: {new Date(tx.timelock).toLocaleString()}
-          </p>
+      {tx.timelock && tx.amount >= 10 && (
+        <div
+          className={`flex items-center gap-2 mb-4 p-3 rounded-lg ${
+            Date.now() < tx.timelock ? "bg-orange-50" : "bg-green-50"
+          }`}
+        >
+          <AlertCircle
+            className={`h-4 w-4 ${
+              Date.now() < tx.timelock ? "text-orange-600" : "text-green-600"
+            }`}
+          />
+          {(() => {
+          const timelockDuration = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
+          const unlockTime = tx.timelock + timelockDuration;
+          const now = Date.now();
+
+          if (now < unlockTime) {
+            // Still locked
+            return (
+              <p>
+                🔒 Unlocks on: {new Date(unlockTime).toLocaleDateString()} at{" "}
+                {new Date(unlockTime).toLocaleTimeString()}
+              </p>
+            );
+          } else {
+            // Already unlocked
+            return (
+              <p>
+                ✅ Unlocked since: {new Date(unlockTime).toLocaleDateString()} at{" "}
+                {new Date(unlockTime).toLocaleTimeString()}
+              </p>
+            );
+          }
+        })()}
+
         </div>
       )}
 
@@ -115,9 +144,10 @@ export default function TransactionCard({
       <div className="flex flex-col gap-2">
         {/* Show execute when ready (≥3 confirmations) */}
         {!tx.executed && tx.confirmations >= 3 && (
-          <button 
-          onClick={() => onExecute(tx.id)}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors">
+          <button
+            onClick={() => onExecute(tx.id)}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
+          >
             <Send className="h-4 w-4" />
             Execute Transaction
           </button>

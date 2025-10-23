@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { readContract } from "@wagmi/core";
 import { multisigTimelockAbi } from "@/constants";
-import type { Config, usePublicClient } from "wagmi";
+import type { Config } from "wagmi";
 import { PublicClient } from "viem";
 
 export type UiTx = {
@@ -10,7 +10,7 @@ export type UiTx = {
   amount: number;
   confirmations: number;
   executed: boolean;
-  timelock?: number;
+  timelock?: number; // stored in milliseconds
 };
 
 export function useTransactions(
@@ -22,18 +22,19 @@ export function useTransactions(
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 🧠 Unique cache key (prevents overwriting across wallets/networks)
+  // 🧠 Unique cache key (per multisig)
   const storageKey = multisigAddress
     ? `multisig-transactions-${multisigAddress}`
     : "multisig-transactions";
 
   const fetchTransactions = useCallback(async () => {
     if (!config || !multisigAddress || !publicClient) return;
+
     try {
       setLoading(true);
       setError(null);
 
-      // 1️⃣ Get total count
+      // 1️⃣ Get transaction count
       const txCount = (await readContract(config, {
         abi: multisigTimelockAbi,
         address: multisigAddress,
@@ -60,9 +61,12 @@ export function useTransactions(
 
         console.log("📦 txData raw:", txData);
 
-        // If it’s an object (struct)
-        const { to, value, data, confirmations, proposedAt, executed } =
-          txData as any;
+        const { to, value, confirmations, proposedAt, executed } = txData as any;
+
+        // ✅ Convert proposedAt from seconds → milliseconds
+        const proposedAtSec = proposedAt ? Number(proposedAt) : 0;
+        const proposedAtMs =
+          proposedAtSec > 0 ? proposedAtSec * 1000 : undefined;
 
         txs.push({
           id: i,
@@ -70,7 +74,7 @@ export function useTransactions(
           amount: Number(value) / 1e18,
           confirmations: Number(confirmations),
           executed,
-          timelock: Number(proposedAt),
+          timelock: proposedAtMs,
         });
       }
 
@@ -89,7 +93,7 @@ export function useTransactions(
     }
   }, [config, multisigAddress, publicClient, storageKey]);
 
-  // ⚙️ Load cached transactions immediately on mount
+  // ⚙️ Load cached transactions first, then fetch fresh
   useEffect(() => {
     if (!multisigAddress) return;
 
@@ -101,15 +105,15 @@ export function useTransactions(
           setTransactions(parsed);
         }
       } catch {
-        localStorage.removeItem(storageKey); // invalid cache, clear it
+        localStorage.removeItem(storageKey);
       }
     }
 
-    // Fetch fresh data in background
+    // Fetch new data
     fetchTransactions();
   }, [fetchTransactions, multisigAddress, storageKey]);
 
-  // 🧹 Clear cache if multisig changes (optional safety)
+  // 🧹 Optional: clear cache if multisig changes
   useEffect(() => {
     return () => {
       if (multisigAddress) {
