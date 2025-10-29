@@ -2,7 +2,9 @@
 
 This project has been built as a personal mini-project, and it is a role-based, multi-signature wallet with a timelock functionality built with Open Zeppelin's Role-Based Access-Control(RBAC).
 
-The timelock functionality kicks in with increasing amounts of ETH to be sent in a transaction.
+The timelock functionality kicks in with increasing amounts of ETH to be sent in a transaction. 
+
+⚠ The repository is still under continuous development and shouldn't be used in production.
 
 A live 'unverified' contract address with Ethereum Sepolia testnet is available at [contract address](https://sepolia.etherscan.io/address/0x34da08fbaed3814e8c71691641ef0ad4fe0b7fde).
 A Second Verified Contract address with Ethereum Sepolia testnet is available at [contract address](https://sepolia.etherscan.io/address/0xd1b5cd33bae15f16ceb28c378c77885e4563e024)
