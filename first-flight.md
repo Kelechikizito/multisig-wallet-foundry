@@ -88,12 +88,6 @@ Compatibilities:
 
 ## Setup
 
-Please outline specific steps/processes to be followed in order for an auditor to run the project off a local clone of the contest repo. Please again be detailed and thorough, including specific markdowned CLI commands and necessary .env adjustments.
-
-Please also include steps needed to run appropriate tests included in scope.
-
-Example:
-
 Build:
 ```bash
 foundryup
